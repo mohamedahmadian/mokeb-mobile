@@ -2,7 +2,8 @@
  * Learn more about Light and Dark modes:
  * https://docs.expo.io/guides/color-schemes/
  */
-import { Text as DefaultText, View as DefaultView } from 'react-native';
+import { View as DefaultView, type TextProps as RNTextProps } from 'react-native';
+import { Text as VazirText } from '@/src/lib/fonts';
 
 import { useColorScheme } from './useColorScheme';
 
@@ -13,7 +14,7 @@ type ThemeProps = {
   darkColor?: string;
 };
 
-export type TextProps = ThemeProps & DefaultText['props'];
+export type TextProps = ThemeProps & RNTextProps;
 export type ViewProps = ThemeProps & DefaultView['props'];
 
 export function useThemeColor(
@@ -34,7 +35,7 @@ export function Text(props: TextProps) {
   const { style, lightColor, darkColor, ...otherProps } = props;
   const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
 
-  return <DefaultText style={[{ color }, style]} {...otherProps} />;
+  return <VazirText style={[{ color }, style]} {...otherProps} />;
 }
 
 export function View(props: ViewProps) {
