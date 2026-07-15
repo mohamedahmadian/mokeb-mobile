@@ -10,9 +10,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
 import {
-  CapacityStatusLegend,
-  DayCapacityCard,
-} from "@/src/components/capacity/DayCapacityCard";
+  DayMealReportCard,
+  MealReportStatusLegend,
+} from "@/src/components/meals/DayMealReportCard";
 import { PersianDateField } from "@/src/components/PersianDateField";
 import {
   EmptyState,
@@ -22,12 +22,7 @@ import {
   ScreenScroll,
 } from "@/src/components/ui";
 import { useAuth } from "@/src/contexts/AuthContext";
-import {
-  defaultCapacityRange,
-  getCapacityDateBounds,
-  getInventoryHorizonMeta,
-  isRangeWithinBounds,
-} from "@/src/lib/capacity-date-range";
+import { isRangeWithinBounds } from "@/src/lib/capacity-date-range";
 import { fontFamilies } from "@/src/lib/fonts";
 import { Text } from "@/src/lib/fonts";
 import { notify } from "@/src/lib/notify";
@@ -38,11 +33,15 @@ import {
   parsePersianDate,
 } from "@/src/lib/persianDate";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
-import { getInventoryRange } from "@/src/services/mawkib-inventory";
+import {
+  defaultMealReportRange,
+  getMealReportDateBounds,
+  getMealReportRange,
+} from "@/src/services/meals";
 import { listMawkibs } from "@/src/services/mawkibs";
 import type { Mawkib } from "@/src/types";
 
-export default function CapacityCalendarScreen() {
+export default function MealReportScreen() {
   const { ownerId } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams<{ mawkibId?: string }>();
@@ -73,15 +72,13 @@ export default function CapacityCalendarScreen() {
   const selectedMawkib =
     mawkibs.find((item) => item.id === selectedMawkibId) ?? null;
 
-  const horizon = useMemo(() => getInventoryHorizonMeta(), []);
   const dateBounds = useMemo(
     () =>
-      getCapacityDateBounds(
+      getMealReportDateBounds(
         selectedMawkib?.serviceStartDate,
         selectedMawkib?.serviceEndDate,
-        horizon,
       ),
-    [selectedMawkib, horizon],
+    [selectedMawkib],
   );
 
   const boundYears = useMemo(() => {
@@ -97,7 +94,7 @@ export default function CapacityCalendarScreen() {
   }, [dateBounds]);
 
   const defaults = useMemo(
-    () => defaultCapacityRange(dateBounds ?? undefined),
+    () => defaultMealReportRange(dateBounds ?? undefined),
     [dateBounds],
   );
 
@@ -115,16 +112,18 @@ export default function CapacityCalendarScreen() {
     setAppliedRange(defaults);
   }, [defaults.startDate, defaults.endDate]);
 
-  const inventoryQuery = useQuery({
+  const reportQuery = useQuery({
     queryKey: [
-      "mawkib-inventory",
+      "meal-report",
+      ownerId,
       selectedMawkibId,
       appliedRange.startDate,
       appliedRange.endDate,
     ],
-    enabled: !!selectedMawkibId && !!dateBounds,
+    enabled: !!ownerId && !!selectedMawkibId && !!dateBounds,
     queryFn: () =>
-      getInventoryRange(
+      getMealReportRange(
+        ownerId!,
         selectedMawkibId!,
         appliedRange.startDate,
         appliedRange.endDate,
@@ -139,7 +138,7 @@ export default function CapacityCalendarScreen() {
       return;
     }
     if (!dateBounds) {
-      notify("توجه", "بازه خدمت یا افق ظرفیت برای این موکب تعریف نشده است");
+      notify("توجه", "بازه تاریخ برای این موکب در دسترس نیست");
       return;
     }
     if (
@@ -159,20 +158,16 @@ export default function CapacityCalendarScreen() {
     setAppliedRange({ startDate, endDate });
   };
 
-  const days = inventoryQuery.data?.days ?? [];
-  const minAvailableMale =
-    days.length > 0 ? Math.min(...days.map((d) => d.availableMale)) : 0;
-  const minAvailableFemale =
-    days.length > 0 ? Math.min(...days.map((d) => d.availableFemale)) : 0;
-  const fullDays = days.filter(
-    (d) => d.availableMale <= 0 && d.availableFemale <= 0,
-  ).length;
+  const days = reportQuery.data?.days ?? [];
+  const rangeTotal = days.reduce((sum, day) => sum + day.totalCount, 0);
+  const rangeServed = days.reduce((sum, day) => sum + day.servedCount, 0);
+  const rangeRemaining = Math.max(0, rangeTotal - rangeServed);
 
   if (!selectedMawkibId) {
     return (
       <ScreenContainer>
         <AppHeader
-          title="تقویم ظرفیت"
+          title="گزارش وعده غذایی"
           subtitle="انتخاب موکب"
           onBack={() => router.back()}
           showLogo
@@ -192,7 +187,7 @@ export default function CapacityCalendarScreen() {
                 key={mawkib.id}
                 title={mawkib.name}
                 titleIcon="home-outline"
-                subtitle={`ظرفیت ${formatPersianNumber(mawkib.maleCapacity + mawkib.femaleCapacity)} نفر`}
+                subtitle={mawkib.address}
                 onPress={() => setSelectedMawkibId(mawkib.id)}
               />
             ))
@@ -205,7 +200,7 @@ export default function CapacityCalendarScreen() {
   return (
     <ScreenContainer>
       <AppHeader
-        title="تقویم ظرفیت"
+        title="گزارش وعده غذایی"
         subtitle={selectedMawkib?.name ?? "موکب"}
         onBack={() => {
           if (mawkibs.length > 1 && !paramMawkibId) {
@@ -246,19 +241,12 @@ export default function CapacityCalendarScreen() {
         {!dateBounds ? (
           <View style={styles.warningBox}>
             <Text style={styles.warningText}>
-              بازه خدمت موکب تعریف نشده و افق ظرفیت در دسترس نیست.
+              بازه تاریخ برای این موکب در دسترس نیست.
             </Text>
           </View>
         ) : (
           <>
             <View style={styles.rangeCard}>
-              {/* <Text style={styles.rangeHint}>
-                {dateBounds.isServicePeriod
-                  ? "بازه خدمت موکب"
-                  : `افق ظرفیت (${formatPersianNumber(horizon.horizonDays)} روز)`}
-                : {formatPersianDate(dateBounds.minDate)} تا{" "}
-                {formatPersianDate(dateBounds.maxDate)}
-              </Text> */}
               <View style={styles.rangeInputs}>
                 <PersianDateField
                   label="از تاریخ"
@@ -279,26 +267,43 @@ export default function CapacityCalendarScreen() {
               </View>
               <PrimaryButton
                 label="نمایش"
-                icon="calendar-outline"
+                icon="pie-chart-outline"
                 compact
                 onPress={applyRange}
               />
             </View>
 
-            {/* <CapacityStatusLegend /> */}
-
-            {inventoryQuery.isFetching ? (
+            {reportQuery.isFetching ? (
               <ActivityIndicator color={colors.primary} style={styles.loader} />
             ) : days.length === 0 ? (
               <EmptyState
-                icon="calendar-outline"
+                icon="restaurant-outline"
                 title="روزی برای نمایش نیست"
               />
             ) : (
               <>
+                <View style={styles.summaryRow}>
+                  <SummaryChip
+                    label="کل"
+                    value={formatPersianNumber(rangeTotal)}
+                  />
+                  <SummaryChip
+                    label="تحویل"
+                    value={formatPersianNumber(rangeServed)}
+                    tone="success"
+                  />
+                  <SummaryChip
+                    label="باقیمانده"
+                    value={formatPersianNumber(rangeRemaining)}
+                    tone={rangeRemaining > 0 ? "warning" : "success"}
+                  />
+                </View>
+
+                <MealReportStatusLegend />
+
                 <View style={styles.dayGrid}>
                   {days.map((day) => (
-                    <DayCapacityCard key={day.date} day={day} />
+                    <DayMealReportCard key={day.date} day={day} />
                   ))}
                 </View>
               </>
@@ -317,13 +322,13 @@ function SummaryChip({
 }: {
   label: string;
   value: string;
-  tone?: "default" | "success" | "danger";
+  tone?: "default" | "success" | "warning";
 }) {
   const palette =
     tone === "success"
       ? { bg: colors.successLight, text: colors.success }
-      : tone === "danger"
-        ? { bg: colors.dangerLight, text: colors.danger }
+      : tone === "warning"
+        ? { bg: colors.warningLight, text: colors.warning }
         : { bg: colors.primaryLight, text: colors.primaryDark };
 
   return (
@@ -385,10 +390,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.md,
     gap: spacing.sm,
-  },
-  rangeHint: {
-    ...typography.caption,
-    color: colors.textMuted,
   },
   rangeInputs: {
     gap: spacing.sm,

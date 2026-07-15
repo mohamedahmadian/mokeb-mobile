@@ -8,6 +8,13 @@ import {
   matchesPersonOrReservationQuery,
 } from "@/src/lib/person-search";
 import {
+  carPlateFromUser,
+  carPlateToProfileFields,
+  matchesCarPlate,
+  normalizeCarPlateValue,
+  resolveProfilePlateFields,
+} from "@/src/lib/carPlate";
+import {
   formatMobileForLookup,
   getFullNameValidationError,
   getMobileValidationError,
@@ -35,6 +42,9 @@ type PilgrimRow = {
   city: string | null;
   address: string | null;
   carPlate: string | null;
+  plate_two_digit: string | null;
+  plate_serial: string | null;
+  plate_province: string | null;
   description: string | null;
   whatsapp: string | null;
   telegram: string | null;
@@ -46,6 +56,13 @@ type PilgrimRow = {
 };
 
 function mapPilgrim(row: PilgrimRow): User {
+  const plateFields = carPlateFromUser({
+    plateTwoDigit: row.plate_two_digit,
+    plateSerial: row.plate_serial,
+    plateProvince: row.plate_province,
+    carPlate: row.carPlate,
+  });
+
   return {
     id: row.id,
     fullName: row.fullName,
@@ -61,6 +78,9 @@ function mapPilgrim(row: PilgrimRow): User {
     city: row.city,
     address: row.address,
     carPlate: row.carPlate,
+    plateTwoDigit: plateFields.plateTwoDigit || null,
+    plateSerial: plateFields.plateSerial || null,
+    plateProvince: plateFields.plateProvince || null,
     description: row.description,
     whatsapp: row.whatsapp,
     telegram: row.telegram,
@@ -105,6 +125,10 @@ export async function listPilgrims(
   if (filters.city) {
     clauses.push("u.city = ?");
     params.push(filters.city);
+  }
+  if (filters.gender) {
+    clauses.push("u.gender = ?");
+    params.push(filters.gender);
   }
   if (filters.mawkibId) {
     clauses.push(
@@ -161,6 +185,48 @@ export async function listPilgrims(
     });
   }
 
+  result = result.filter((pilgrim) => {
+    if (
+      filters.country?.trim() &&
+      !(pilgrim.country ?? "").includes(filters.country.trim())
+    ) {
+      return false;
+    }
+    if (
+      filters.plateTwoDigit?.trim() ||
+      filters.plateSerial?.trim() ||
+      filters.plateProvince?.trim()
+    ) {
+      if (
+        !matchesCarPlate(pilgrim, {
+          plateTwoDigit: filters.plateTwoDigit ?? "",
+          plateSerial: filters.plateSerial ?? "",
+          plateProvince: filters.plateProvince ?? "",
+        })
+      ) {
+        return false;
+      }
+    } else if (
+      filters.carPlate?.trim() &&
+      !(pilgrim.carPlate ?? "").includes(filters.carPlate.trim())
+    ) {
+      return false;
+    }
+    if (
+      filters.passportNumber?.trim() &&
+      !(pilgrim.passportNumber ?? "").includes(filters.passportNumber.trim())
+    ) {
+      return false;
+    }
+    if (
+      filters.description?.trim() &&
+      !(pilgrim.description ?? "").includes(filters.description.trim())
+    ) {
+      return false;
+    }
+    return true;
+  });
+
   return result;
 }
 
@@ -214,13 +280,19 @@ export async function createPilgrim(input: PilgrimInput): Promise<User> {
   if (existing) throw new Error("زائری با این شماره موبایل قبلاً ثبت شده است");
 
   const passwordHash = await bcrypt.hash(mobile.slice(-6), 10);
+  const plateFields = resolveProfilePlateFields(input) ?? carPlateToProfileFields({
+    plateTwoDigit: "",
+    plateSerial: "",
+    plateProvince: "",
+  });
   const result = await db.runAsync(
     `INSERT INTO users (
       fullName, mobileNumber, passwordHash, nationalId,
       nationalIdCardImageUrl, imageUrl, gender, birthDate, country,
-      passportNumber, province, city, address, carPlate, description,
+      passportNumber, province, city, address, carPlate,
+      plate_two_digit, plate_serial, plate_province, description,
       whatsapp, telegram, bale, eitaa, email
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.fullName.trim(),
       mobile,
@@ -235,7 +307,10 @@ export async function createPilgrim(input: PilgrimInput): Promise<User> {
       input.province?.trim() || null,
       input.city?.trim() || null,
       input.address?.trim() || null,
-      input.carPlate?.trim() || null,
+      plateFields.carPlate,
+      plateFields.plateTwoDigit || null,
+      plateFields.plateSerial || null,
+      plateFields.plateProvince || null,
       input.description?.trim() || null,
       input.whatsapp?.trim() || null,
       input.telegram?.trim() || null,

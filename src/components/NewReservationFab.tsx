@@ -1,16 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
   Animated,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Reanimated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/src/lib/fonts";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
+
+const FAB_SIZE = 58;
+const TAB_BAR_HEIGHT = 68;
+const DRAG_ACTIVATION_DISTANCE = 8;
+
+type FabPosition = { x: number; y: number };
+
+let persistedFabPosition: FabPosition | null = null;
 
 type NewReservationFabProps = {
   /** Extra lift when a sticky bottom bar is visible */
@@ -24,11 +40,48 @@ type MenuItem = {
   onPress: () => void;
 };
 
-export function NewReservationFab({ bottomOffset = 0 }: NewReservationFabProps) {
+function clamp(value: number, min: number, max: number) {
+  "worklet";
+  return Math.min(Math.max(value, min), max);
+}
+
+export function NewReservationFab({
+  bottomOffset = 0,
+}: NewReservationFabProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<FabPosition>({ x: 0, y: 0 });
   const progress = useRef(new Animated.Value(0)).current;
+
+  const horizontalPadding = spacing.lg;
+  const tabBarInset =
+    TAB_BAR_HEIGHT +
+    Math.max(insets.bottom, Platform.OS === "android" ? 8 : 0);
+  const defaultBottom = tabBarInset + spacing.sm + bottomOffset;
+  const defaultLeft = spacing.lg;
+  const defaultTop = screenHeight - FAB_SIZE - defaultBottom;
+
+  const minX = horizontalPadding;
+  const maxX = screenWidth - FAB_SIZE - horizontalPadding;
+  const minY = insets.top + spacing.sm;
+  const maxY = screenHeight - FAB_SIZE - tabBarInset - bottomOffset;
+
+  const posX = useSharedValue(persistedFabPosition?.x ?? defaultLeft);
+  const posY = useSharedValue(persistedFabPosition?.y ?? defaultTop);
+  const dragStartX = useSharedValue(0);
+  const dragStartY = useSharedValue(0);
+  const isDragging = useSharedValue(false);
+
+  const savePosition = useCallback((x: number, y: number) => {
+    persistedFabPosition = { x, y };
+  }, []);
+
+  const openMenu = useCallback((x: number, y: number) => {
+    setMenuPosition({ x, y });
+    setOpen(true);
+  }, []);
 
   useEffect(() => {
     Animated.spring(progress, {
@@ -39,8 +92,17 @@ export function NewReservationFab({ bottomOffset = 0 }: NewReservationFabProps) 
     }).start();
   }, [open, progress]);
 
-  const bottom =
-    Math.max(insets.bottom, spacing.md) + spacing.sm + bottomOffset;
+  useEffect(() => {
+    if (persistedFabPosition) {
+      posX.value = clamp(persistedFabPosition.x, minX, maxX);
+      posY.value = clamp(persistedFabPosition.y, minY, maxY);
+      persistedFabPosition = { x: posX.value, y: posY.value };
+      return;
+    }
+
+    posX.value = defaultLeft;
+    posY.value = defaultTop;
+  }, [defaultLeft, defaultTop, maxX, maxY, minX, minY, posX, posY]);
 
   const requestId = () => String(Date.now());
 
@@ -99,6 +161,37 @@ export function NewReservationFab({ bottomOffset = 0 }: NewReservationFabProps) 
     },
   ];
 
+  const panGesture = Gesture.Pan()
+    .minDistance(DRAG_ACTIVATION_DISTANCE)
+    .onBegin(() => {
+      isDragging.value = true;
+      dragStartX.value = posX.value;
+      dragStartY.value = posY.value;
+    })
+    .onUpdate((event) => {
+      posX.value = clamp(dragStartX.value + event.translationX, minX, maxX);
+      posY.value = clamp(dragStartY.value + event.translationY, minY, maxY);
+    })
+    .onFinalize(() => {
+      isDragging.value = false;
+      runOnJS(savePosition)(posX.value, posY.value);
+    });
+
+  const tapGesture = Gesture.Tap().onEnd(() => {
+    runOnJS(openMenu)(posX.value, posY.value);
+  });
+
+  const fabGesture = Gesture.Exclusive(panGesture, tapGesture);
+
+  const fabAnimatedStyle = useAnimatedStyle(() => ({
+    position: "absolute",
+    left: posX.value,
+    top: posY.value,
+    zIndex: 10,
+    opacity: isDragging.value ? 0.92 : 1,
+    transform: [{ scale: isDragging.value ? 1.06 : 1 }],
+  }));
+
   const fabRotation = progress.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "45deg"],
@@ -116,9 +209,27 @@ export function NewReservationFab({ bottomOffset = 0 }: NewReservationFabProps) 
         <View style={styles.modalRoot} pointerEvents="box-none">
           <Pressable style={styles.backdrop} onPress={close} />
           <View
-            style={[styles.menuAnchor, { bottom }]}
+            style={[
+              styles.menuAnchor,
+              { left: menuPosition.x, top: menuPosition.y },
+            ]}
             pointerEvents="box-none"
           >
+            <Pressable
+              onPress={close}
+              style={({ pressed }) => [
+                styles.fab,
+                styles.fabOpen,
+                pressed && styles.pressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="بستن منو"
+            >
+              <Animated.View style={{ transform: [{ rotate: fabRotation }] }}>
+                <Ionicons name="add" size={28} color="#fff" />
+              </Animated.View>
+            </Pressable>
+
             <View style={styles.menuColumn} pointerEvents="box-none">
               {items.map((item, index) => {
                 const fromEnd = items.length - 1 - index;
@@ -168,50 +279,29 @@ export function NewReservationFab({ bottomOffset = 0 }: NewReservationFabProps) 
                 );
               })}
             </View>
-
-            <Pressable
-              onPress={close}
-              style={({ pressed }) => [
-                styles.fab,
-                styles.fabOpen,
-                pressed && styles.pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="بستن منو"
-            >
-              <Animated.View style={{ transform: [{ rotate: fabRotation }] }}>
-                <Ionicons name="add" size={28} color="#fff" />
-              </Animated.View>
-            </Pressable>
           </View>
         </View>
       </Modal>
 
       {!open ? (
-        <View
-          style={[styles.idleAnchor, { bottom }]}
-          pointerEvents="box-none"
-        >
-          <Pressable
-            onPress={() => setOpen(true)}
-            style={({ pressed }) => [styles.fab, pressed && styles.pressed]}
+        <GestureDetector gesture={fabGesture}>
+          <Reanimated.View
+            style={fabAnimatedStyle}
+            pointerEvents="box-none"
             accessibilityRole="button"
             accessibilityLabel="منوی سریع"
           >
-            <Ionicons name="add" size={28} color="#fff" />
-          </Pressable>
-        </View>
+            <View style={styles.fab}>
+              <Ionicons name="add" size={28} color="#fff" />
+            </View>
+          </Reanimated.View>
+        </GestureDetector>
       ) : null}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  idleAnchor: {
-    position: "absolute",
-    left: spacing.lg,
-    zIndex: 10,
-  },
   modalRoot: {
     flex: 1,
   },
@@ -221,14 +311,15 @@ const styles = StyleSheet.create({
   },
   menuAnchor: {
     position: "absolute",
-    left: spacing.lg,
-    alignItems: "flex-start",
-    gap: spacing.sm,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
   },
   menuColumn: {
+    position: "absolute",
+    left: 0,
+    bottom: FAB_SIZE + spacing.sm,
     alignItems: "flex-start",
     gap: spacing.sm,
-    marginBottom: spacing.xs,
   },
   menuItem: {
     alignItems: "flex-start",
@@ -267,8 +358,8 @@ const styles = StyleSheet.create({
     minWidth: 96,
   },
   fab: {
-    width: 58,
-    height: 58,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
     borderRadius: radius.full,
     backgroundColor: colors.primary,
     alignItems: "center",

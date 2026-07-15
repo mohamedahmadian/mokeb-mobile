@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
   Pressable,
@@ -10,11 +11,13 @@ import { Text } from "@/src/lib/fonts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, type Href } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
+import { CarPlateSearchModal } from "@/src/components/CarPlateSearchModal";
 import { CapacityDayCarousel } from "@/src/components/capacity/CapacityDayCarousel";
 import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { ScreenContainer } from "@/src/components/ui";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
+import { useTabRefresh } from "@/src/hooks/useTabRefresh";
 import { notify } from "@/src/lib/notify";
 import { colors, spacing } from "@/src/lib/theme";
 import { fontFamilies } from "@/src/lib/fonts";
@@ -77,11 +80,19 @@ export default function DashboardScreen() {
   const { user, ownerId, canManage, canViewReports, logout } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [carPlateSearchVisible, setCarPlateSearchVisible] = useState(false);
+
+  const refreshDashboardData = () => {
+    void queryClient.invalidateQueries({ queryKey: ["mawkib-capacity-day"] });
+    void queryClient.invalidateQueries({ queryKey: ["mawkib-inventory"] });
+  };
 
   const { refreshing, onRefresh } = usePullToRefresh(async () => {
     await queryClient.invalidateQueries({ queryKey: ["mawkib-capacity-day"] });
     await queryClient.invalidateQueries({ queryKey: ["mawkib-inventory"] });
   });
+
+  useTabRefresh({ onRefresh: refreshDashboardData });
 
   const openTab = (href: Href) => router.push(href);
 
@@ -175,6 +186,14 @@ export default function DashboardScreen() {
       title: "زائر",
       items: [
         {
+          key: "pilgrims-new",
+          label: "زائر جدید",
+          icon: "person-add",
+          tint: "#e0f2fe",
+          iconColor: "#0284c7",
+          onPress: () => openPilgrims("new"),
+        },
+        {
           key: "pilgrims-search",
           label: "جستجوی زائر",
           icon: "search",
@@ -183,12 +202,12 @@ export default function DashboardScreen() {
           onPress: () => openPilgrims("search"),
         },
         {
-          key: "pilgrims-new",
-          label: "زائر جدید",
-          icon: "person-add",
-          tint: "#e0f2fe",
-          iconColor: "#0284c7",
-          onPress: () => openPilgrims("new"),
+          key: "pilgrims-car-search",
+          label: "جستجوی ماشین",
+          icon: "car",
+          tint: "#fef3c7",
+          iconColor: "#d97706",
+          onPress: () => setCarPlateSearchVisible(true),
         },
       ],
     },
@@ -196,20 +215,20 @@ export default function DashboardScreen() {
       title: "موکب",
       items: [
         {
-          key: "mawkibs-list",
-          label: "مدیریت موکب",
-          icon: "home",
-          tint: colors.primaryLight,
-          iconColor: colors.primaryDark,
-          onPress: () => openMawkibs(),
-        },
-        {
           key: "mawkibs-add",
           label: "ثبت موکب",
           icon: "add-circle",
           tint: "#f0fdf4",
           iconColor: "#16a34a",
           onPress: () => openMawkibs("new"),
+        },
+        {
+          key: "mawkibs-list",
+          label: "مدیریت موکب",
+          icon: "home",
+          tint: colors.primaryLight,
+          iconColor: colors.primaryDark,
+          onPress: () => openMawkibs(),
         },
         {
           key: "mawkibs-capacity",
@@ -225,20 +244,20 @@ export default function DashboardScreen() {
       title: "رزرو",
       items: [
         {
-          key: "reservations-list",
-          label: "لیست رزروها",
-          icon: "calendar",
-          tint: "#e8eef6",
-          iconColor: colors.primary,
-          onPress: () => openTab("/(tabs)/reservations"),
-        },
-        {
           key: "reservations-new",
           label: "رزرو جدید",
           icon: "calendar-outline",
           tint: "#fef3c7",
           iconColor: "#d97706",
           onPress: openNewReservation,
+        },
+        {
+          key: "reservations-list",
+          label: "لیست رزروها",
+          icon: "calendar",
+          tint: "#e8eef6",
+          iconColor: colors.primary,
+          onPress: () => openTab("/(tabs)/reservations"),
         },
       ],
     },
@@ -298,8 +317,7 @@ export default function DashboardScreen() {
                 icon: "document-text" as const,
                 tint: "#e2e8f0",
                 iconColor: "#475569",
-                onPress: () =>
-                  notify("توجه", "گزارش وعده غذایی هنوز پیاده‌سازی نشده است"),
+                onPress: () => openTab("/menu/meal-report"),
               },
             ]
           : []),
@@ -467,6 +485,13 @@ export default function DashboardScreen() {
         ))}
       </ScrollView>
       <NewReservationFab />
+      {ownerId ? (
+        <CarPlateSearchModal
+          visible={carPlateSearchVisible}
+          ownerId={ownerId}
+          onClose={() => setCarPlateSearchVisible(false)}
+        />
+      ) : null}
     </ScreenContainer>
   );
 }

@@ -1,6 +1,10 @@
 import { boolFromDb, getDatabase } from "@/src/db/client";
 import { allocateNextReservationTrackingCode } from "@/src/lib/reservation-code";
 import { reservationRowMatchesQuery } from "@/src/lib/reservation-lookup";
+import {
+  matchesFullName,
+  matchesTrackingCode,
+} from "@/src/lib/person-search";
 import { formatPersianDate } from "@/src/lib/persianDate";
 import { formatMobileForLookup } from "@/src/lib/validation";
 import type { PilgrimCardDetails } from "@/src/lib/reservation-track";
@@ -167,6 +171,18 @@ export async function listReservations(
     clauses.push("r.reservationDate <= ?");
     params.push(filters.dateTo);
   }
+  if (filters.createdAt) {
+    clauses.push("date(r.createdAt) = date(?)");
+    params.push(filters.createdAt);
+  }
+  if (filters.reservationDate) {
+    clauses.push("r.reservationDate = ?");
+    params.push(filters.reservationDate);
+  }
+  if (filters.reservationEndDate) {
+    clauses.push("r.reservationEndDate = ?");
+    params.push(filters.reservationEndDate);
+  }
 
   const rows = await db.getAllAsync<ReservationRow>(
     `SELECT r.*, m.name as mawkibName, p.fullName as pilgrimName,
@@ -179,9 +195,29 @@ export async function listReservations(
     params,
   );
 
-  const mapped = rows.map(mapReservation);
-  if (!filters.query?.trim()) return mapped;
-  return mapped.filter((row) => reservationRowMatchesQuery(row, filters.query!));
+  let result = rows.map(mapReservation);
+
+  if (filters.query?.trim()) {
+    result = result.filter((row) =>
+      reservationRowMatchesQuery(row, filters.query!),
+    );
+  }
+  if (filters.pilgrimName?.trim()) {
+    result = result.filter((row) =>
+      matchesFullName(row.pilgrimName, filters.pilgrimName!),
+    );
+  }
+  if (filters.trackingCode?.trim()) {
+    result = result.filter((row) =>
+      matchesTrackingCode(row.trackingCode, filters.trackingCode!),
+    );
+  }
+  if (filters.description?.trim()) {
+    const needle = filters.description.trim();
+    result = result.filter((row) => (row.description ?? "").includes(needle));
+  }
+
+  return result;
 }
 
 export async function countReservations(ownerUserId: number): Promise<number> {

@@ -3,9 +3,11 @@ import { File, Paths } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { Image, Pressable, StyleSheet, View } from "react-native";
 import { PersianDateField } from "@/src/components/PersianDateField";
+import { CarPlateInput } from "@/src/components/CarPlateInput";
 import { AppInput } from "@/src/components/ui";
 import { LocationFields } from "@/src/components/LocationFields";
 import { Text } from "@/src/lib/fonts";
+import { carPlateFromUser, carPlateToProfileFields } from "@/src/lib/carPlate";
 import { notify } from "@/src/lib/notify";
 import { toPersianDateDisplay } from "@/src/lib/persianDate";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
@@ -24,7 +26,9 @@ export type UserFormData = {
   province: string;
   city: string;
   address: string;
-  carPlate: string;
+  plateTwoDigit: string;
+  plateSerial: string;
+  plateProvince: string;
   description: string;
   whatsapp: string;
   telegram: string;
@@ -34,6 +38,8 @@ export type UserFormData = {
 };
 
 export function createUserFormData(user?: User | null): UserFormData {
+  const plate = carPlateFromUser(user ?? {});
+
   return {
     fullName: user?.fullName ?? "",
     mobileNumber: user?.mobileNumber ?? "",
@@ -47,7 +53,9 @@ export function createUserFormData(user?: User | null): UserFormData {
     province: user?.province ?? "",
     city: user?.city ?? "",
     address: user?.address ?? "",
-    carPlate: user?.carPlate ?? "",
+    plateTwoDigit: plate.plateTwoDigit,
+    plateSerial: plate.plateSerial,
+    plateProvince: plate.plateProvince,
     description: user?.description ?? "",
     whatsapp: user?.whatsapp ?? "",
     telegram: user?.telegram ?? "",
@@ -58,9 +66,35 @@ export function createUserFormData(user?: User | null): UserFormData {
 }
 
 export function userFormToInput(value: UserFormData): UserProfileInput {
+  const plateFields = carPlateToProfileFields({
+    plateTwoDigit: value.plateTwoDigit,
+    plateSerial: value.plateSerial,
+    plateProvince: value.plateProvince,
+  });
+
   return {
-    ...value,
+    fullName: value.fullName,
+    mobileNumber: value.mobileNumber,
+    nationalId: value.nationalId,
+    nationalIdCardImageUrl: value.nationalIdCardImageUrl,
+    imageUrl: value.imageUrl,
     gender: value.gender || null,
+    birthDate: value.birthDate,
+    country: value.country,
+    passportNumber: value.passportNumber,
+    province: value.province,
+    city: value.city,
+    address: value.address,
+    carPlate: plateFields.carPlate ?? undefined,
+    plateTwoDigit: plateFields.plateTwoDigit || undefined,
+    plateSerial: plateFields.plateSerial || undefined,
+    plateProvince: plateFields.plateProvince || undefined,
+    description: value.description,
+    whatsapp: value.whatsapp,
+    telegram: value.telegram,
+    bale: value.bale,
+    eitaa: value.eitaa,
+    email: value.email,
   };
 }
 
@@ -76,7 +110,10 @@ type ImageFieldProps = {
   onChange: (uri: string) => void;
 };
 
-function persistPickedImage(uri: string, imageType: ImageFieldProps["imageType"]) {
+function persistPickedImage(
+  uri: string,
+  imageType: ImageFieldProps["imageType"],
+) {
   try {
     const extension = uri.match(/\.([a-zA-Z0-9]+)(?:\?|$)/)?.[1] ?? "jpg";
     const destination = new File(
@@ -90,12 +127,7 @@ function persistPickedImage(uri: string, imageType: ImageFieldProps["imageType"]
   }
 }
 
-function ImageField({
-  label,
-  value,
-  imageType,
-  onChange,
-}: ImageFieldProps) {
+function ImageField({ label, value, imageType, onChange }: ImageFieldProps) {
   const chooseImage = async (source: "library" | "camera") => {
     const permission =
       source === "camera"
@@ -148,7 +180,9 @@ function ImageField({
             size={34}
             color={colors.textSubtle}
           />
-          <Text style={styles.imagePlaceholderText}>تصویری انتخاب نشده است</Text>
+          <Text style={styles.imagePlaceholderText}>
+            تصویری انتخاب نشده است
+          </Text>
         </View>
       )}
       <View style={styles.imageActions}>
@@ -159,7 +193,11 @@ function ImageField({
           ]}
           onPress={() => chooseImage("library")}
         >
-          <Ionicons name="images-outline" size={18} color={colors.primaryDark} />
+          <Ionicons
+            name="images-outline"
+            size={18}
+            color={colors.primaryDark}
+          />
           <Text style={styles.imageActionText}>انتخاب از گالری</Text>
         </Pressable>
         <Pressable
@@ -169,12 +207,19 @@ function ImageField({
           ]}
           onPress={() => chooseImage("camera")}
         >
-          <Ionicons name="camera-outline" size={18} color={colors.primaryDark} />
+          <Ionicons
+            name="camera-outline"
+            size={18}
+            color={colors.primaryDark}
+          />
           <Text style={styles.imageActionText}>گرفتن عکس</Text>
         </Pressable>
       </View>
       {value ? (
-        <Pressable style={styles.removeImageButton} onPress={() => onChange("")}>
+        <Pressable
+          style={styles.removeImageButton}
+          onPress={() => onChange("")}
+        >
           <Ionicons name="trash-outline" size={16} color={colors.danger} />
           <Text style={styles.removeImageText}>حذف تصویر</Text>
         </Pressable>
@@ -272,10 +317,20 @@ export function UserProfileForm({ value, onChange }: UserProfileFormProps) {
         onChangeText={(text) => setField("address", text)}
         multiline
       />
-      <AppInput
-        label="پلاک خودرو"
-        value={value.carPlate}
-        onChangeText={(text) => setField("carPlate", text)}
+      <CarPlateInput
+        value={{
+          plateTwoDigit: value.plateTwoDigit,
+          plateSerial: value.plateSerial,
+          plateProvince: value.plateProvince,
+        }}
+        onChange={(plate) =>
+          onChange({
+            ...value,
+            plateTwoDigit: plate.plateTwoDigit,
+            plateSerial: plate.plateSerial,
+            plateProvince: plate.plateProvince,
+          })
+        }
       />
       <AppInput
         label="توضیحات"

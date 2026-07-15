@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Platform, StyleSheet, View } from "react-native";
+import { TAB_REFRESH_PARAM } from "@/src/hooks/useTabRefresh";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fontFamilies } from "@/src/lib/fonts";
 import { colors, typography } from "@/src/lib/theme";
@@ -36,7 +37,9 @@ function DashboardTabIcon({
   focused: boolean;
 }) {
   return (
-    <View style={[styles.dashboardButton, focused && styles.dashboardButtonActive]}>
+    <View
+      style={[styles.dashboardButton, focused && styles.dashboardButtonActive]}
+    >
       <Ionicons
         name={focused ? "grid" : "grid-outline"}
         size={26}
@@ -76,9 +79,28 @@ const styles = StyleSheet.create({
   },
 });
 
+function createMainTabPressListener(
+  router: ReturnType<typeof useRouter>,
+  path: "/(tabs)/dashboard" | "/(tabs)/pilgrims" | "/(tabs)/reservations",
+) {
+  return {
+    tabPress: (event: { preventDefault: () => void }) => {
+      event.preventDefault();
+      router.navigate({
+        pathname: path,
+        params: { [TAB_REFRESH_PARAM]: String(Date.now()) },
+      });
+    },
+  };
+}
+
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 8 : 0);
+  const router = useRouter();
+  const bottomInset = Math.max(
+    insets.bottom,
+    Platform.OS === "android" ? 8 : 0,
+  );
 
   return (
     <Tabs
@@ -145,6 +167,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="dashboard"
+        listeners={createMainTabPressListener(router, "/(tabs)/dashboard")}
         options={{
           title: "داشبورد",
           tabBarIcon: ({ color, focused }) => (
@@ -161,6 +184,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="pilgrims"
+        listeners={createMainTabPressListener(router, "/(tabs)/pilgrims")}
         options={{
           title: "زائر",
           tabBarIcon: ({ color, focused }) => (
@@ -170,6 +194,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="reservations"
+        listeners={createMainTabPressListener(router, "/(tabs)/reservations")}
         options={{
           title: "رزرو",
           tabBarIcon: ({ color, focused }) => (

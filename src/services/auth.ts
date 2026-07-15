@@ -1,6 +1,7 @@
 import bcrypt from "@/src/lib/bcrypt";
 import * as SecureStore from "expo-secure-store";
 import { boolFromDb, getDatabase } from "@/src/db/client";
+import { carPlateFromUser, resolveProfilePlateFields } from "@/src/lib/carPlate";
 import {
   formatMobileForLookup,
   getFullNameValidationError,
@@ -28,6 +29,9 @@ type UserRow = {
   city: string | null;
   address: string | null;
   carPlate: string | null;
+  plate_two_digit?: string | null;
+  plate_serial?: string | null;
+  plate_province?: string | null;
   description: string | null;
   whatsapp: string | null;
   telegram: string | null;
@@ -67,6 +71,13 @@ async function resolveOwnerUserId(
 }
 
 function mapUser(row: UserRow, roles: RoleName[], ownerUserId: number): User {
+  const plateFields = carPlateFromUser({
+    plateTwoDigit: row.plate_two_digit,
+    plateSerial: row.plate_serial,
+    plateProvince: row.plate_province,
+    carPlate: row.carPlate,
+  });
+
   return {
     id: row.id,
     fullName: row.fullName,
@@ -82,6 +93,9 @@ function mapUser(row: UserRow, roles: RoleName[], ownerUserId: number): User {
     city: row.city,
     address: row.address,
     carPlate: row.carPlate,
+    plateTwoDigit: plateFields.plateTwoDigit || null,
+    plateSerial: plateFields.plateSerial || null,
+    plateProvince: plateFields.plateProvince || null,
     description: row.description,
     whatsapp: row.whatsapp,
     telegram: row.telegram,
@@ -299,7 +313,15 @@ export async function applyUserProfileUpdate(
   addText("province", input.province);
   addText("city", input.city);
   addText("address", input.address);
-  addText("carPlate", input.carPlate);
+  const plateFields = resolveProfilePlateFields(input);
+  if (plateFields) {
+    addText("carPlate", plateFields.carPlate);
+    addText("plate_two_digit", plateFields.plateTwoDigit || null);
+    addText("plate_serial", plateFields.plateSerial || null);
+    addText("plate_province", plateFields.plateProvince || null);
+  } else {
+    addText("carPlate", input.carPlate);
+  }
   addText("description", input.description);
   addText("whatsapp", input.whatsapp);
   addText("telegram", input.telegram);

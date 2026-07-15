@@ -308,24 +308,36 @@ export function PrimaryButton({
 
 type StickyBottomActionProps = {
   children: React.ReactNode;
+  /** وقتی false باشد دکمه با باز شدن کیبورد جابه‌جا نمی‌شود */
+  avoidKeyboard?: boolean;
 };
 
-export function StickyBottomAction({ children }: StickyBottomActionProps) {
+export function StickyBottomAction({
+  children,
+  avoidKeyboard = true,
+}: StickyBottomActionProps) {
   const insets = useSafeAreaInsets();
+  const content = (
+    <View
+      style={[
+        styles.stickyAction,
+        { paddingBottom: Math.max(insets.bottom, spacing.md) },
+      ]}
+    >
+      {children}
+    </View>
+  );
+
+  if (!avoidKeyboard) {
+    return content;
+  }
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "position"}
       keyboardVerticalOffset={0}
     >
-      <View
-        style={[
-          styles.stickyAction,
-          { paddingBottom: Math.max(insets.bottom, spacing.md) },
-        ]}
-      >
-        {children}
-      </View>
+      {content}
     </KeyboardAvoidingView>
   );
 }
@@ -425,6 +437,7 @@ type ListCardProps = {
     value?: string;
   }[];
   badge?: string;
+  badgeCaption?: string;
   badgeColor?: string;
   badgeTextColor?: string;
   footer?: React.ReactNode;
@@ -439,6 +452,7 @@ export function ListCard({
   meta,
   details,
   badge,
+  badgeCaption,
   badgeColor = colors.primaryLight,
   badgeTextColor = colors.primaryDark,
   footer,
@@ -456,11 +470,18 @@ export function ListCard({
       ]}
     >
       <View style={styles.cardHeader}>
-        {badge ? (
-          <View style={[styles.badge, { backgroundColor: badgeColor }]}>
-            <Text style={[styles.badgeText, { color: badgeTextColor }]}>
-              {badge}
-            </Text>
+        {badge || badgeCaption ? (
+          <View style={styles.badgeColumn}>
+            {badgeCaption ? (
+              <Text style={styles.badgeCaption}>{badgeCaption}</Text>
+            ) : null}
+            {badge ? (
+              <View style={[styles.badge, { backgroundColor: badgeColor }]}>
+                <Text style={[styles.badgeText, { color: badgeTextColor }]}>
+                  {badge}
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : (
           <View style={styles.headerSpacer} />
@@ -794,6 +815,17 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     color: colors.text,
     textAlign: "right",
+    writingDirection: "rtl",
+  },
+  badgeColumn: {
+    alignItems: "flex-start",
+    gap: 4,
+  },
+  badgeCaption: {
+    ...typography.caption,
+    fontSize: 10,
+    color: colors.textSubtle,
+    textAlign: "left",
     writingDirection: "rtl",
   },
   badge: {

@@ -1,5 +1,6 @@
 import bcrypt from "@/src/lib/bcrypt";
 import { boolFromDb, boolToDb, getDatabase } from "@/src/db/client";
+import { carPlateToProfileFields, parseCarPlateText } from "@/src/lib/carPlate";
 import { formatMobileForLookup } from "@/src/lib/validation";
 import type { ManageSection } from "@/src/services/data-management";
 import { listPilgrims } from "@/src/services/pilgrims";
@@ -87,6 +88,7 @@ export type ExportedMealPlan = {
   trackingCode: string;
   date: string;
   mealType: MealType;
+  guestCount: number;
   isRequired: boolean;
   isServed: boolean;
   servedAt?: string | null;
@@ -391,13 +393,14 @@ export async function exportSectionData(
     trackingCode: string;
     date: string;
     mealType: MealType;
+    guestCount: number;
     isRequired: number;
     isServed: number;
     servedAt: string | null;
     createdAt: string;
     updatedAt: string;
   }>(
-    `SELECT r.trackingCode, mp.date, mp.mealType, mp.isRequired, mp.isServed,
+    `SELECT r.trackingCode, mp.date, mp.mealType, mp.guestCount, mp.isRequired, mp.isServed,
             mp.servedAt, mp.createdAt, mp.updatedAt
      FROM meal_plans mp
      INNER JOIN reservations r ON r.id = mp.reservationId
@@ -414,6 +417,7 @@ export async function exportSectionData(
       trackingCode: row.trackingCode,
       date: row.date,
       mealType: row.mealType,
+      guestCount: row.guestCount,
       isRequired: boolFromDb(row.isRequired),
       isServed: boolFromDb(row.isServed),
       servedAt: row.servedAt,
@@ -530,6 +534,9 @@ async function upsertPilgrim(
 
   const db = await getDatabase();
   const existing = await findPilgrimByMobile(mobile);
+  const plateFields = carPlateToProfileFields(
+    parseCarPlateText(pilgrim.carPlate ?? ""),
+  );
 
   if (existing) {
     if (await isStaffUser(existing.id)) {
@@ -543,7 +550,9 @@ async function upsertPilgrim(
       `UPDATE users SET
         fullName = ?, nationalId = ?, nationalIdCardImageUrl = ?, imageUrl = ?,
         gender = ?, birthDate = ?, country = ?, passportNumber = ?,
-        province = ?, city = ?, address = ?, carPlate = ?, description = ?,
+        province = ?, city = ?, address = ?, carPlate = ?,
+        plate_two_digit = ?, plate_serial = ?, plate_province = ?,
+        description = ?,
         whatsapp = ?, telegram = ?, bale = ?, eitaa = ?, email = ?
        WHERE id = ?`,
       [
@@ -558,7 +567,10 @@ async function upsertPilgrim(
         pilgrim.province?.trim() || null,
         pilgrim.city?.trim() || null,
         pilgrim.address?.trim() || null,
-        pilgrim.carPlate?.trim() || null,
+        plateFields.carPlate,
+        plateFields.plateTwoDigit || null,
+        plateFields.plateSerial || null,
+        plateFields.plateProvince || null,
         pilgrim.description?.trim() || null,
         pilgrim.whatsapp?.trim() || null,
         pilgrim.telegram?.trim() || null,
@@ -577,9 +589,10 @@ async function upsertPilgrim(
     `INSERT INTO users (
       fullName, mobileNumber, passwordHash, nationalId,
       nationalIdCardImageUrl, imageUrl, gender, birthDate, country,
-      passportNumber, province, city, address, carPlate, description,
+      passportNumber, province, city, address, carPlate,
+      plate_two_digit, plate_serial, plate_province, description,
       whatsapp, telegram, bale, eitaa, email, createdAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
     [
       pilgrim.fullName.trim(),
       mobile,
@@ -594,7 +607,10 @@ async function upsertPilgrim(
       pilgrim.province?.trim() || null,
       pilgrim.city?.trim() || null,
       pilgrim.address?.trim() || null,
-      pilgrim.carPlate?.trim() || null,
+      plateFields.carPlate,
+      plateFields.plateTwoDigit || null,
+      plateFields.plateSerial || null,
+      plateFields.plateProvince || null,
       pilgrim.description?.trim() || null,
       pilgrim.whatsapp?.trim() || null,
       pilgrim.telegram?.trim() || null,
@@ -1012,10 +1028,11 @@ async function importMealItem(
   if (existing) {
     await db.runAsync(
       `UPDATE meal_plans SET
-        isRequired = ?, isServed = ?, servedAt = ?,
+        guestCount = ?, isRequired = ?, isServed = ?, servedAt = ?,
         updatedAt = COALESCE(?, datetime('now'))
        WHERE id = ?`,
       [
+        Math.max(1, item.guestCount ?? 1),
         boolToDb(item.isRequired),
         boolToDb(item.isServed),
         item.servedAt ?? null,
@@ -1028,12 +1045,13 @@ async function importMealItem(
 
   await db.runAsync(
     `INSERT INTO meal_plans (
-      reservationId, date, mealType, isRequired, isServed, servedAt, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
+      reservationId, date, mealType, guestCount, isRequired, isServed, servedAt, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))`,
     [
       reservation.id,
       item.date,
       item.mealType,
+      Math.max(1, item.guestCount ?? 1),
       boolToDb(item.isRequired),
       boolToDb(item.isServed),
       item.servedAt ?? null,

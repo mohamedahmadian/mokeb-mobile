@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -19,6 +21,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
 import { ListTotalCounter } from "@/src/components/ListTotalCounter";
 import { PersianDateField } from "@/src/components/PersianDateField";
+import { LocationFields } from "@/src/components/LocationFields";
+import { CarPlateInput } from "@/src/components/CarPlateInput";
 import { PilgrimCardModal } from "@/src/components/PilgrimCardModal";
 import { PendingDeliveredItemsCheckoutModal } from "@/src/components/PendingDeliveredItemsCheckoutModal";
 import {
@@ -34,17 +38,27 @@ import {
   StickyBottomAction,
 } from "@/src/components/ui";
 import { NewReservationFab } from "@/src/components/NewReservationFab";
+import { ReservationFiltersModal } from "@/src/components/ReservationFiltersModal";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
 import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
+import { useTabRefresh } from "@/src/hooks/useTabRefresh";
 import { useAppBackHandler } from "@/src/hooks/useAppBackHandler";
+import { formatPersianDateTime } from "@/src/lib/format-time";
 import { notify } from "@/src/lib/notify";
 import { reservationStatusLabel } from "@/src/lib/labels";
+import {
+  createEmptyReservationFilterForm,
+  hasActiveReservationFilters,
+  reservationFilterFormToListFilters,
+  reservationListFiltersToForm,
+} from "@/src/lib/reservation-filters";
 import {
   addDaysToPersianDate,
   formatPersianDate,
   parsePersianDate,
 } from "@/src/lib/persianDate";
+import { carPlateToProfileFields } from "@/src/lib/carPlate";
 import { colors, formTypography, spacing } from "@/src/lib/theme";
 import { openReservationSms } from "@/src/lib/reservation-track";
 import {
@@ -73,6 +87,34 @@ import {
 const todayIso = new Date().toISOString().slice(0, 10);
 const todayPersian = formatPersianDate(todayIso);
 const tomorrowPersian = addDaysToPersianDate(todayPersian, 1) ?? todayPersian;
+
+type PilgrimExtraInfo = {
+  gender: UserGender | "";
+  nationalId: string;
+  country: string;
+  province: string;
+  city: string;
+  plateTwoDigit: string;
+  plateSerial: string;
+  plateProvince: string;
+  passportNumber: string;
+  address: string;
+};
+
+function createEmptyPilgrimExtraInfo(): PilgrimExtraInfo {
+  return {
+    gender: "",
+    nationalId: "",
+    country: "ایران",
+    province: "",
+    city: "",
+    plateTwoDigit: "",
+    plateSerial: "",
+    plateProvince: "",
+    passportNumber: "",
+    address: "",
+  };
+}
 
 function GuestCounter({
   label,
@@ -210,6 +252,18 @@ export default function ReservationsScreen() {
   const hasAppliedGenderDefault = useRef(false);
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query.trim());
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [draftFilters, setDraftFilters] = useState(
+    createEmptyReservationFilterForm,
+  );
+  const [appliedFilters, setAppliedFilters] = useState(
+    createEmptyReservationFilterForm,
+  );
+  const listFilters = useMemo(
+    () => reservationFilterFormToListFilters(appliedFilters),
+    [appliedFilters],
+  );
+  const hasFilters = hasActiveReservationFilters(listFilters);
   const [showForm, setShowForm] = useState(false);
   const [formStep, setFormStep] = useState<1 | 2>(1);
   const [selectedMawkibId, setSelectedMawkibId] = useState<number | null>(null);
@@ -224,7 +278,13 @@ export default function ReservationsScreen() {
   const [showNewPilgrimForm, setShowNewPilgrimForm] = useState(true);
   const [newPilgrimName, setNewPilgrimName] = useState("");
   const [newPilgrimMobile, setNewPilgrimMobile] = useState("");
+  const [pilgrimExtraInfo, setPilgrimExtraInfo] = useState(
+    createEmptyPilgrimExtraInfo,
+  );
+  const [showPilgrimExtraInfo, setShowPilgrimExtraInfo] = useState(false);
+  const [pilgrimSearchFocusTick, setPilgrimSearchFocusTick] = useState(0);
   const [trackingCode, setTrackingCode] = useState("");
+  const [reservationDescription, setReservationDescription] = useState("");
   const [startDate, setStartDate] = useState(todayPersian);
   const [endDate, setEndDate] = useState(tomorrowPersian);
   const [durationDays, setDurationDays] = useState(1);
@@ -247,13 +307,10 @@ export default function ReservationsScreen() {
     null,
   );
 
-  useAppBackHandler(
-    () => {
-      setExtendingReservation(null);
-      return true;
-    },
-    !!extendingReservation,
-  );
+  useAppBackHandler(() => {
+    setExtendingReservation(null);
+    return true;
+  }, !!extendingReservation);
 
   const applyPilgrimGenderDefault = (gender?: UserGender | null) => {
     if (hasAppliedGenderDefault.current || !gender) return;
@@ -261,6 +318,14 @@ export default function ReservationsScreen() {
     hasAppliedGenderDefault.current = true;
     setMaleCount(gender === "Male" ? 1 : 0);
     setFemaleCount(gender === "Female" ? 1 : 0);
+    setPilgrimExtraInfo((current) => ({ ...current, gender }));
+  };
+
+  const updatePilgrimExtraField = <K extends keyof PilgrimExtraInfo>(
+    field: K,
+    value: PilgrimExtraInfo[K],
+  ) => {
+    setPilgrimExtraInfo((current) => ({ ...current, [field]: value }));
   };
 
   const resetForm = () => {
@@ -274,7 +339,11 @@ export default function ReservationsScreen() {
     setShowNewPilgrimForm(true);
     setNewPilgrimName("");
     setNewPilgrimMobile("");
+    setPilgrimExtraInfo(createEmptyPilgrimExtraInfo());
+    setShowPilgrimExtraInfo(false);
+    setPilgrimSearchFocusTick(0);
     setTrackingCode("");
+    setReservationDescription("");
     setStartDate(todayPersian);
     setEndDate(tomorrowPersian);
     setDurationDays(1);
@@ -305,6 +374,7 @@ export default function ReservationsScreen() {
     setDurationDays(getStayDuration(reservationStartDate, reservationEndDate));
     setMaleCount(reservation.maleGuestCount);
     setFemaleCount(reservation.femaleGuestCount);
+    setReservationDescription(reservation.description ?? "");
     setShowForm(true);
   };
 
@@ -319,19 +389,6 @@ export default function ReservationsScreen() {
       return;
     }
     closeForm();
-  };
-
-  const formScrollRef = useRef<ScrollView>(null);
-  const pilgrimSectionOffset = useRef(0);
-
-  const scrollToPilgrimSection = () => {
-    const y = Math.max(0, pilgrimSectionOffset.current - 12);
-    requestAnimationFrame(() => {
-      formScrollRef.current?.scrollTo({ y, animated: true });
-    });
-    setTimeout(() => {
-      formScrollRef.current?.scrollTo({ y, animated: true });
-    }, 280);
   };
 
   const goToStep2 = () => {
@@ -354,8 +411,37 @@ export default function ReservationsScreen() {
   };
 
   useEffect(() => {
+    if (!showForm || formStep !== 2) return;
+
+    if (maleCount === 1 && femaleCount === 0) {
+      setPilgrimExtraInfo((current) =>
+        current.gender === "Male" ? current : { ...current, gender: "Male" },
+      );
+    } else if (femaleCount === 1 && maleCount === 0) {
+      setPilgrimExtraInfo((current) =>
+        current.gender === "Female"
+          ? current
+          : { ...current, gender: "Female" },
+      );
+    }
+  }, [showForm, formStep, maleCount, femaleCount]);
+
+  useEffect(() => {
     const requestId = reservationParams.reservationRequestId;
     if (!requestId || handledReservationRequest.current === requestId) {
+      return;
+    }
+
+    const openHistory = reservationParams.reservationAction === "history";
+    if (openHistory) {
+      handledReservationRequest.current = requestId;
+      setShowForm(false);
+      resetForm();
+      setQuery(
+        reservationParams.pilgrimMobile?.trim() ||
+          reservationParams.pilgrimName?.trim() ||
+          "",
+      );
       return;
     }
 
@@ -425,11 +511,14 @@ export default function ReservationsScreen() {
     isFetching,
     refetch: refetchReservations,
   } = useQuery({
-    queryKey: ["reservations", ownerId, debouncedQuery],
+    queryKey: ["reservations", ownerId, debouncedQuery, listFilters],
     enabled: !!ownerId,
     placeholderData: keepPreviousData,
     queryFn: () =>
-      listReservations(ownerId!, { query: debouncedQuery || undefined }),
+      listReservations(ownerId!, {
+        query: debouncedQuery || undefined,
+        ...listFilters,
+      }),
   });
 
   const { data: totalReservations = 0, refetch: refetchReservationCount } =
@@ -441,6 +530,20 @@ export default function ReservationsScreen() {
 
   const { refreshing, onRefresh } = usePullToRefresh(async () => {
     await Promise.all([refetchReservations(), refetchReservationCount()]);
+  });
+
+  useTabRefresh({
+    onReset: () => {
+      closeForm();
+      setFilterModalVisible(false);
+      setExtendingReservation(null);
+      setFinalCheckoutReservation(null);
+      setCardModalVisible(false);
+    },
+    onRefresh: () => {
+      void queryClient.invalidateQueries({ queryKey: ["reservations"] });
+      void queryClient.invalidateQueries({ queryKey: ["reservations-count"] });
+    },
   });
 
   const mawkibsQuery = useQuery({
@@ -496,9 +599,25 @@ export default function ReservationsScreen() {
       if (showNewPilgrimForm) {
         let pilgrim = await getPilgrimByMobile(newPilgrimMobile);
         if (!pilgrim) {
+          const plateFields = carPlateToProfileFields({
+            plateTwoDigit: pilgrimExtraInfo.plateTwoDigit,
+            plateSerial: pilgrimExtraInfo.plateSerial,
+            plateProvince: pilgrimExtraInfo.plateProvince,
+          });
           pilgrim = await createPilgrim({
             fullName: newPilgrimName,
             mobileNumber: newPilgrimMobile,
+            gender: pilgrimExtraInfo.gender || null,
+            nationalId: pilgrimExtraInfo.nationalId,
+            country: pilgrimExtraInfo.country,
+            province: pilgrimExtraInfo.province,
+            city: pilgrimExtraInfo.city,
+            carPlate: plateFields.carPlate ?? undefined,
+            plateTwoDigit: plateFields.plateTwoDigit || undefined,
+            plateSerial: plateFields.plateSerial || undefined,
+            plateProvince: plateFields.plateProvince || undefined,
+            passportNumber: pilgrimExtraInfo.passportNumber,
+            address: pilgrimExtraInfo.address,
           });
         }
         pilgrimId = pilgrim.id;
@@ -528,6 +647,7 @@ export default function ReservationsScreen() {
         maleGuestCount: maleCount,
         femaleGuestCount: femaleCount,
         pilgrimMobile,
+        description: reservationDescription.trim() || undefined,
       };
 
       if (editingReservationId) {
@@ -630,10 +750,7 @@ export default function ReservationsScreen() {
       queryClient.invalidateQueries({ queryKey: ["mawkib-inventory"] });
       queryClient.invalidateQueries({ queryKey: ["meal-plans"] });
       setExtendingReservation(null);
-      notify(
-        "موفق",
-        `رزرو تمدیدی با کد ${created.trackingCode} ثبت شد`,
-      );
+      notify("موفق", `رزرو تمدیدی با کد ${created.trackingCode} ثبت شد`);
     },
     onError: (error: Error) => notify("خطا", error.message),
   });
@@ -775,6 +892,16 @@ export default function ReservationsScreen() {
     );
   };
 
+  const openFilterModal = () => {
+    setDraftFilters(reservationListFiltersToForm(listFilters));
+    setFilterModalVisible(true);
+  };
+
+  const applyFilters = () => {
+    setAppliedFilters(draftFilters);
+    setFilterModalVisible(false);
+  };
+
   return (
     <ScreenContainer>
       <AppHeader
@@ -785,26 +912,31 @@ export default function ReservationsScreen() {
               : "رزرو جدید"
             : "رزروها"
         }
-        subtitle={showForm ? undefined : "مدیریت و جستجوی رزرو"}
+        subtitle={showForm ? undefined : "مدیریت و جستجوی رزروها"}
         onBack={showForm ? handleFormBack : undefined}
         showLogo={!showForm}
       />
 
       {showForm ? (
-        <View style={styles.formArea}>
-          <View style={styles.form}>
-            <ScrollView
-              ref={formScrollRef}
-              style={styles.formScroll}
-              contentContainerStyle={styles.formScrollContent}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              showsVerticalScrollIndicator
-            >
+        <KeyboardAvoidingView
+          style={styles.formWizard}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+        >
+          <View style={styles.formArea}>
+            <View style={styles.form}>
+              <ScrollView
+                style={styles.formScroll}
+                contentContainerStyle={styles.formScrollContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                automaticallyAdjustKeyboardInsets
+                showsVerticalScrollIndicator
+              >
               {formStep === 1 ? (
-                <>
+                <View style={styles.formStepContent}>
                   {!hideMawkibPicker ? (
-                    <>
+                    <View style={styles.formStepContent}>
                       <View style={styles.formTitleRow}>
                         <Text style={styles.formTitle}>انتخاب موکب</Text>
                       </View>
@@ -822,15 +954,9 @@ export default function ReservationsScreen() {
                         />
                       ))}
                       <View style={styles.sectionDivider} />
-                    </>
+                    </View>
                   ) : null}
-
-                  <View
-                    style={styles.pilgrimSection}
-                    onLayout={(event) => {
-                      pilgrimSectionOffset.current = event.nativeEvent.layout.y;
-                    }}
-                  >
+                  <View style={styles.pilgrimSection}>
                     <View style={styles.pilgrimSectionHeader}>
                       <PrimaryButton
                         label={showNewPilgrimForm ? "جستجوی زائر" : "زائر جدید"}
@@ -841,7 +967,13 @@ export default function ReservationsScreen() {
                         style={styles.pilgrimModeButton}
                         compact
                         onPress={() => {
-                          setShowNewPilgrimForm((current) => !current);
+                          setShowNewPilgrimForm((current) => {
+                            const next = !current;
+                            if (!next) {
+                              setPilgrimSearchFocusTick((tick) => tick + 1);
+                            }
+                            return next;
+                          });
                           setSelectedPilgrimId(null);
                           setSelectedPilgrimMobile("");
                           setPilgrimQuery("");
@@ -849,9 +981,7 @@ export default function ReservationsScreen() {
                       />
                       <View style={styles.pilgrimSectionTitleWrap}>
                         <Text style={styles.formTitle}>
-                          {showNewPilgrimForm
-                            ? "انتخاب زائر جدید"
-                            : "انتخاب زائر"}
+                          {showNewPilgrimForm ? " زائر جدید" : "انتخاب زائر"}
                         </Text>
                       </View>
                     </View>
@@ -861,30 +991,161 @@ export default function ReservationsScreen() {
                           label="نام و نام خانوادگی"
                           value={newPilgrimName}
                           onChangeText={setNewPilgrimName}
-                          onFocus={scrollToPilgrimSection}
                         />
                         <AppInput
                           label="شماره تلفن همراه"
                           value={newPilgrimMobile}
                           onChangeText={setNewPilgrimMobile}
                           keyboardType="phone-pad"
-                          onFocus={scrollToPilgrimSection}
                         />
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.collapsibleHeader,
+                            pressed && styles.collapsibleHeaderPressed,
+                          ]}
+                          onPress={() =>
+                            setShowPilgrimExtraInfo((current) => !current)
+                          }
+                          accessibilityRole="button"
+                          accessibilityState={{
+                            expanded: showPilgrimExtraInfo,
+                          }}
+                          accessibilityLabel="اطلاعات تکمیلی زائر"
+                        >
+                          <Ionicons
+                            name={
+                              showPilgrimExtraInfo
+                                ? "chevron-up"
+                                : "chevron-down"
+                            }
+                            size={18}
+                            color={colors.textMuted}
+                          />
+                          <Text
+                            style={[
+                              styles.collapsibleTitle,
+                              {
+                                textAlign: "left",
+                              },
+                            ]}
+                          >
+                            اطلاعات تکمیلی زائر (اختیاری)
+                          </Text>
+                        </Pressable>
+
+                        {showPilgrimExtraInfo ? (
+                          <View style={styles.pilgrimExtraFields}>
+                            <View style={styles.field}>
+                              <View style={styles.labelRow}>
+                                <Text style={styles.fieldLabel}>جنسیت</Text>
+                              </View>
+                              <View style={styles.genderRow}>
+                                {(
+                                  [
+                                    ["Male", "مرد"],
+                                    ["Female", "زن"],
+                                  ] as const
+                                ).map(([gender, label]) => {
+                                  const selected =
+                                    pilgrimExtraInfo.gender === gender;
+                                  return (
+                                    <Pressable
+                                      key={gender}
+                                      style={[
+                                        styles.genderButton,
+                                        selected && styles.genderButtonSelected,
+                                      ]}
+                                      onPress={() =>
+                                        updatePilgrimExtraField(
+                                          "gender",
+                                          gender,
+                                        )
+                                      }
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.genderText,
+                                          selected && styles.genderTextSelected,
+                                        ]}
+                                      >
+                                        {label}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </View>
+                            </View>
+                            <AppInput
+                              label="کد ملی (اختیاری)"
+                              value={pilgrimExtraInfo.nationalId}
+                              onChangeText={(text) =>
+                                updatePilgrimExtraField("nationalId", text)
+                              }
+                              keyboardType="number-pad"
+                            />
+                            <AppInput
+                              label="کشور"
+                              value={pilgrimExtraInfo.country}
+                              onChangeText={(text) =>
+                                updatePilgrimExtraField("country", text)
+                              }
+                            />
+                            <LocationFields
+                              province={pilgrimExtraInfo.province}
+                              city={pilgrimExtraInfo.city}
+                              onProvinceChange={(text) =>
+                                updatePilgrimExtraField("province", text)
+                              }
+                              onCityChange={(text) =>
+                                updatePilgrimExtraField("city", text)
+                              }
+                            />
+                            <AppInput
+                              label="شماره گذرنامه"
+                              value={pilgrimExtraInfo.passportNumber}
+                              onChangeText={(text) =>
+                                updatePilgrimExtraField("passportNumber", text)
+                              }
+                            />
+                            <CarPlateInput
+                              value={{
+                                plateTwoDigit: pilgrimExtraInfo.plateTwoDigit,
+                                plateSerial: pilgrimExtraInfo.plateSerial,
+                                plateProvince: pilgrimExtraInfo.plateProvince,
+                              }}
+                              onChange={(plate) =>
+                                setPilgrimExtraInfo((current) => ({
+                                  ...current,
+                                  plateTwoDigit: plate.plateTwoDigit,
+                                  plateSerial: plate.plateSerial,
+                                  plateProvince: plate.plateProvince,
+                                }))
+                              }
+                            />
+                            <AppInput
+                              label="آدرس"
+                              value={pilgrimExtraInfo.address}
+                              onChangeText={(text) =>
+                                updatePilgrimExtraField("address", text)
+                              }
+                              multiline
+                            />
+                          </View>
+                        ) : null}
                       </View>
                     ) : (
-                      <>
+                      <View style={styles.pilgrimSearchBlock}>
                         <AppInput
-                          label="جستجوی زائر"
+                          key={`pilgrim-search-${pilgrimSearchFocusTick}`}
+                          label="لطفا اطلاعات زائر را وارد نمایید"
                           value={pilgrimQuery}
                           onChangeText={setPilgrimQuery}
                           placeholder="نام، موبایل یا کد ملی"
-                          onFocus={scrollToPilgrimSection}
+                          autoFocus={pilgrimSearchFocusTick > 0}
                         />
                         <View style={styles.pilgrimList}>
                           {!pilgrimQuery.trim() ? (
-                            <Text style={styles.noResult}>
-                              برای نمایش نتایج، نام یا شماره زائر را جستجو کنید.
-                            </Text>
+                            <Text style={styles.noResult}></Text>
                           ) : filteredPilgrims.length === 0 ? (
                             <Text style={styles.noResult}>زائری یافت نشد</Text>
                           ) : (
@@ -910,21 +1171,12 @@ export default function ReservationsScreen() {
                             ))
                           )}
                         </View>
-                      </>
+                      </View>
                     )}
-                    {!editingReservationId ? (
-                      <AppInput
-                        label="کد رزرو"
-                        value={trackingCode}
-                        onChangeText={setTrackingCode}
-                        placeholder="در صورت خالی بودن خودکار تولید می‌شود"
-                        onFocus={scrollToPilgrimSection}
-                      />
-                    ) : null}
                   </View>
-                </>
+                </View>
               ) : (
-                <>
+                <View style={styles.formStepContent}>
                   <View style={styles.formTitleRow}>
                     <Text style={styles.sectionHeading}>تاریخ و مدت اقامت</Text>
                   </View>
@@ -972,23 +1224,70 @@ export default function ReservationsScreen() {
                     }}
                     onChange={setFemaleCount}
                   />
-                </>
+                  <AppInput
+                    label="توضیحات رزرو"
+                    value={reservationDescription}
+                    onChangeText={setReservationDescription}
+                    placeholder="توضیحات اختیاری درباره این رزرو"
+                    multiline
+                  />
+                  {!editingReservationId ? (
+                    <AppInput
+                      label="کد رزرو"
+                      value={trackingCode}
+                      onChangeText={setTrackingCode}
+                      placeholder="در صورت خالی بودن خودکار تولید می‌شود"
+                    />
+                  ) : null}
+                </View>
               )}
-              {formStep === 1 ? <View style={styles.formScrollSpacer} /> : null}
-            </ScrollView>
+              </ScrollView>
+            </View>
           </View>
-        </View>
+          <StickyBottomAction avoidKeyboard={false}>
+            <View style={styles.wizardActions}>
+              {formStep === 1 ? (
+                <PrimaryButton
+                  label="ادامه"
+                  icon="arrow-back"
+                  compact
+                  style={styles.wizardPrimaryAction}
+                  onPress={goToStep2}
+                />
+              ) : (
+                <PrimaryButton
+                  label={editingReservationId ? "ذخیره تغییرات" : "ثبت رزرو"}
+                  icon={editingReservationId ? "save-outline" : "checkmark"}
+                  loading={createMutation.isPending}
+                  compact
+                  style={styles.wizardPrimaryAction}
+                  onPress={() => createMutation.mutate()}
+                />
+              )}
+            </View>
+          </StickyBottomAction>
+        </KeyboardAvoidingView>
       ) : (
         <>
           <View style={styles.listToolbar}>
             <SearchToolbar>
-              <ListTotalCounter
-                label="رزرو"
-                count={totalReservations}
-                icon="calendar"
-                accent={colors.primary}
-                accentSoft={colors.primaryLight}
-              />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.filterButton,
+                  hasFilters && styles.filterButtonActive,
+                  pressed && styles.filterButtonPressed,
+                ]}
+                onPress={openFilterModal}
+                accessibilityRole="button"
+                accessibilityLabel="فیلتر رزروها"
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={22}
+                  color={hasFilters ? colors.primaryDark : colors.textMuted}
+                />
+                {hasFilters ? <View style={styles.filterBadge} /> : null}
+              </Pressable>
               <SearchToolbarField>
                 <SearchBar
                   value={query}
@@ -1019,14 +1318,20 @@ export default function ReservationsScreen() {
               <View style={styles.emptyWrap}>
                 <EmptyState
                   icon="calendar-outline"
-                  title="رزروی جهت نمایش وجود ندارد"
+                  title={
+                    hasFilters || debouncedQuery
+                      ? "رزروی با این مشخصات یافت نشد"
+                      : "رزروی جهت نمایش وجود ندارد"
+                  }
                 />
-                <PrimaryButton
-                  label="رزرو جدید"
-                  icon="calendar-outline"
-                  compact
-                  onPress={openNewReservation}
-                />
+                {!hasFilters && !debouncedQuery ? (
+                  <PrimaryButton
+                    label="رزرو جدید"
+                    icon="calendar-outline"
+                    compact
+                    onPress={openNewReservation}
+                  />
+                ) : null}
               </View>
             ) : (
               reservations.map((reservation) => (
@@ -1034,6 +1339,7 @@ export default function ReservationsScreen() {
                   <ListCard
                     title={reservation.pilgrimName ?? "زائر"}
                     titleIcon="person-outline"
+                    badgeCaption={formatPersianDateTime(reservation.createdAt)}
                     badge={reservationStatusLabel[reservation.status]}
                     badgeColor={
                       reservation.status === "Confirmed"
@@ -1206,41 +1512,14 @@ export default function ReservationsScreen() {
           </ScreenScroll>
         </>
       )}
-      {showForm ? (
-        <StickyBottomAction>
-          <View style={styles.wizardActions}>
-            {formStep === 1 ? (
-              <PrimaryButton
-                label="ادامه"
-                icon="arrow-back"
-                compact
-                style={styles.wizardPrimaryAction}
-                onPress={goToStep2}
-              />
-            ) : (
-              <>
-                <PrimaryButton
-                  label={editingReservationId ? "ذخیره تغییرات" : "ثبت رزرو"}
-                  icon={editingReservationId ? "save-outline" : "checkmark"}
-                  loading={createMutation.isPending}
-                  compact
-                  style={styles.wizardPrimaryAction}
-                  onPress={() => createMutation.mutate()}
-                />
-                <PrimaryButton
-                  label="قبلی"
-                  icon="arrow-forward"
-                  variant="secondary"
-                  compact
-                  style={styles.wizardSecondaryAction}
-                  onPress={() => setFormStep(1)}
-                />
-              </>
-            )}
-          </View>
-        </StickyBottomAction>
-      ) : null}
       {!showForm ? <NewReservationFab /> : null}
+      <ReservationFiltersModal
+        visible={filterModalVisible}
+        value={draftFilters}
+        onChange={setDraftFilters}
+        onClose={() => setFilterModalVisible(false)}
+        onApply={applyFilters}
+      />
       <PilgrimCardModal
         visible={cardModalVisible}
         details={cardDetails}
@@ -1339,6 +1618,32 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
   },
+  filterButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterButtonActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  filterButtonPressed: {
+    opacity: 0.88,
+  },
+  filterBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -1424,8 +1729,13 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderColor: colors.border,
   },
+  formWizard: {
+    flex: 1,
+    minHeight: 0,
+  },
   formArea: {
     flex: 1,
+    minHeight: 0,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
@@ -1445,10 +1755,14 @@ const styles = StyleSheet.create({
   formScrollContent: {
     gap: spacing.sm,
     paddingBottom: spacing.md,
-    flexGrow: 1,
   },
-  formScrollSpacer: {
-    height: 180,
+  formStepContent: {
+    width: "100%",
+    gap: spacing.sm,
+  },
+  pilgrimSearchBlock: {
+    width: "100%",
+    gap: spacing.sm,
   },
   formTitle: {
     ...formTypography.title,
@@ -1539,6 +1853,75 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.background,
   },
+  collapsibleHeader: {
+    direction: "rtl",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  collapsibleHeaderPressed: {
+    opacity: 0.85,
+  },
+  collapsibleTitle: {
+    ...formTypography.body,
+    color: colors.textMuted,
+    fontWeight: "600",
+    textAlign: "right",
+    writingDirection: "rtl",
+    flex: 1,
+  },
+  pilgrimExtraFields: {
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  field: {
+    gap: spacing.xs,
+  },
+  labelRow: {
+    direction: "ltr",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  fieldLabel: {
+    ...formTypography.label,
+    color: colors.text,
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  genderRow: {
+    direction: "ltr",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  genderButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  genderButtonSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  genderText: {
+    ...formTypography.body,
+    color: colors.textMuted,
+    fontWeight: "600",
+  },
+  genderTextSelected: {
+    color: colors.primaryDark,
+  },
   noResult: {
     width: "100%",
     paddingVertical: spacing.md,
@@ -1560,7 +1943,7 @@ const styles = StyleSheet.create({
   },
   counterRowSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: "rgba(232, 238, 246, 0.45)",
   },
   counterLabel: {
     ...formTypography.body,
@@ -1592,11 +1975,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   counterButton: {
-    width: 36,
-    height: 36,
+    width: 48,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: colors.primaryLight,
   },
   counterButtonPressed: {

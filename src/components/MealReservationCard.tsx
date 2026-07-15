@@ -21,6 +21,7 @@ import {
   regenerateMealPlans,
   toggleMealRequired,
   toggleMealServed,
+  updateMealGuestCount,
 } from "@/src/services/meals";
 import type { MealPlan, Reservation } from "@/src/types";
 
@@ -87,16 +88,34 @@ export function MealReservationCard({
     onSettled: () => setBusyMealId(null),
   });
 
+  const guestCountMutation = useMutation({
+    mutationFn: ({
+      mealPlanId,
+      guestCount,
+    }: {
+      mealPlanId: number;
+      guestCount: number;
+    }) => {
+      setBusyMealId(mealPlanId);
+      return updateMealGuestCount(ownerId!, mealPlanId, guestCount);
+    },
+    onSuccess: invalidateMeals,
+    onError: (error: Error) => notify("خطا", error.message),
+    onSettled: () => setBusyMealId(null),
+  });
+
   const servedMutation = useMutation({
     mutationFn: ({
       mealPlanId,
       isServed,
+      guestCount,
     }: {
       mealPlanId: number;
       isServed: boolean;
+      guestCount: number;
     }) => {
       setBusyMealId(mealPlanId);
-      return toggleMealServed(ownerId!, mealPlanId, isServed);
+      return toggleMealServed(ownerId!, mealPlanId, isServed, guestCount);
     },
     onSuccess: invalidateMeals,
     onError: (error: Error) => notify("خطا", error.message),
@@ -106,7 +125,7 @@ export function MealReservationCard({
   const handleCreate = () => {
     notify(
       "ایجاد برنامه غذایی",
-      "در صورت تأیید، تمام برنامه غذایی قبلی این رزرو حذف می‌شود و از تاریخ شروع تا پایان اقامت، هر سه وعده (صبحانه، ناهار، شام) دوباره ایجاد می‌شود.",
+      "در صورت تأیید، تمام برنامه غذایی قبلی این رزرو حذف می‌شود و از تاریخ شروع تا پایان اقامت، هر سه وعده (صبحانه، ناهار، شام) با تعداد نفرات رزرو دوباره ایجاد می‌شود.",
       [
         { text: "انصراف", style: "cancel" },
         {
@@ -226,8 +245,15 @@ export function MealReservationCard({
         onToggleRequired={(meal: MealPlan, isRequired) =>
           requiredMutation.mutate({ mealPlanId: meal.id, isRequired })
         }
-        onToggleServed={(meal: MealPlan, isServed) =>
-          servedMutation.mutate({ mealPlanId: meal.id, isServed })
+        onUpdateGuestCount={(meal: MealPlan, guestCount) =>
+          guestCountMutation.mutate({ mealPlanId: meal.id, guestCount })
+        }
+        onToggleServed={(meal: MealPlan, isServed, guestCount) =>
+          servedMutation.mutate({
+            mealPlanId: meal.id,
+            isServed,
+            guestCount,
+          })
         }
       />
     </View>

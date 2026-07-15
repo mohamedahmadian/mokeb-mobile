@@ -1,27 +1,19 @@
+import { useCallback } from "react";
 import { RefreshControl, StyleSheet, View } from "react-native";
 import { Text } from "@/src/lib/fonts";
-import { useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Redirect, useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
 import { CapacityStatGrid, DonutChart } from "@/src/components/charts";
 import { NewReservationFab } from "@/src/components/NewReservationFab";
-import { EmptyState, ScreenContainer, ScreenScroll } from "@/src/components/ui";
+import { MawkibReportsDayCarousel } from "@/src/components/reports/MawkibReportsDayCarousel";
+import { ScreenContainer, ScreenScroll } from "@/src/components/ui";
 import { useAuth } from "@/src/contexts/AuthContext";
-import {
-  AppRefreshControl,
-  usePullToRefresh,
-} from "@/src/hooks/usePullToRefresh";
+import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { todayDateStringInAppTz } from "@/src/lib/date-only";
-import {
-  formatPersianDate,
-  formatPersianNumber,
-  persianWeekdayLabel,
-} from "@/src/lib/persianDate";
+import { formatPersianNumber } from "@/src/lib/persianDate";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
-import {
-  getMawkibCapacityReports,
-  type MawkibCapacityReport,
-} from "@/src/services/reports";
+import type { MawkibCapacityReport } from "@/src/services/reports";
 
 function MetricChip({
   label,
@@ -53,7 +45,14 @@ function MetricChip({
   );
 }
 
-function MawkibReportCard({ report }: { report: MawkibCapacityReport }) {
+function MawkibReportCard({
+  report,
+  isToday,
+}: {
+  report: MawkibCapacityReport;
+  isToday: boolean;
+}) {
+  const dayLabel = isToday ? "امروز" : "این روز";
   const occupancy =
     report.totalCapacity > 0
       ? Math.round((report.totalFilled / report.totalCapacity) * 100)
@@ -66,7 +65,7 @@ function MawkibReportCard({ report }: { report: MawkibCapacityReport }) {
           <Text style={styles.occupancyValue}>
             {formatPersianNumber(occupancy)}٪
           </Text>
-          <Text style={styles.occupancyLabel}>اشغال امروز</Text>
+          <Text style={styles.occupancyLabel}>اشغال {dayLabel}</Text>
         </View>
         <View style={styles.cardTitleWrap}>
           <Text style={styles.cardTitle}>{report.name}</Text>
@@ -124,7 +123,7 @@ function MawkibReportCard({ report }: { report: MawkibCapacityReport }) {
         />
       </View>
 
-      <Text style={styles.sectionLabel}>وضعیت حضور امروز</Text>
+      <Text style={styles.sectionLabel}>وضعیت حضور {dayLabel}</Text>
       <DonutChart
         data={[
           {
@@ -154,25 +153,19 @@ function MawkibReportCard({ report }: { report: MawkibCapacityReport }) {
 export default function ReportsMawkibsScreen() {
   const { ownerId, canViewReports } = useAuth();
   const router = useRouter();
-  const todayIso = todayDateStringInAppTz();
-  const todayLabel = formatPersianDate(todayIso);
-  const weekday = persianWeekdayLabel(todayIso);
-
-  const {
-    data = [],
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useQuery({
-    queryKey: ["reports-mawkibs", ownerId, todayIso],
-    enabled: !!ownerId && canViewReports,
-    queryFn: () => getMawkibCapacityReports(ownerId!, todayIso),
-  });
+  const queryClient = useQueryClient();
 
   const { refreshing, onRefresh } = usePullToRefresh(async () => {
-    await refetch();
+    await queryClient.invalidateQueries({ queryKey: ["reports-mawkibs"] });
   });
+
+  const renderReport = useCallback(
+    (report: MawkibCapacityReport, date: string) => {
+      const isToday = date === todayDateStringInAppTz();
+      return <MawkibReportCard report={report} isToday={isToday} />;
+    },
+    [],
+  );
 
   if (!canViewReports) {
     return <Redirect href="/(tabs)/dashboard" />;
@@ -182,7 +175,7 @@ export default function ReportsMawkibsScreen() {
     <ScreenContainer>
       <AppHeader
         title="گزارشات موکب"
-        subtitle="آمار ظرفیت و حضور — فقط روز جاری"
+        subtitle="آمار ظرفیت و حضور "
         onBack={() => router.back()}
       />
 
@@ -198,38 +191,12 @@ export default function ReportsMawkibsScreen() {
           />
         }
       >
-        <View style={styles.todayBanner}>
-          <Text style={styles.todayEyebrow}>گزارش روز جاری</Text>
-          <Text style={styles.todayDate}>
-            {weekday} {todayLabel}
-          </Text>
-          <Text style={styles.todayHint}>
-            اشغال، باقیمانده و وضعیت حضور فقط برای رزروهای فعال امروز محاسبه
-            می‌شود.
-          </Text>
-        </View>
-
-        {isLoading ? (
-          <Text style={styles.loading}>در حال بارگذاری...</Text>
-        ) : isError ? (
-          <EmptyState
-            icon="alert-circle-outline"
-            title="خطا در بارگذاری"
-            description={
-              error instanceof Error ? error.message : "گزارش در دسترس نیست"
-            }
+        {ownerId ? (
+          <MawkibReportsDayCarousel
+            ownerId={ownerId}
+            renderReport={renderReport}
           />
-        ) : data.length === 0 ? (
-          <EmptyState
-            icon="home-outline"
-            title="موکبی ثبت نشده"
-            description="ابتدا یک موکب اضافه کنید تا گزارش ظرفیت نمایش داده شود."
-          />
-        ) : (
-          data.map((report) => (
-            <MawkibReportCard key={report.id} report={report} />
-          ))
-        )}
+        ) : null}
       </ScreenScroll>
 
       <NewReservationFab />
@@ -240,44 +207,8 @@ export default function ReportsMawkibsScreen() {
 const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
-    paddingHorizontal: spacing.lg,
     paddingBottom: 120,
     gap: spacing.md,
-  },
-  todayBanner: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.xs,
-    alignItems: "flex-end",
-  },
-  todayEyebrow: {
-    ...typography.caption,
-    color: colors.primaryDark,
-    textAlign: "right",
-    writingDirection: "rtl",
-  },
-  todayDate: {
-    ...typography.subtitle,
-    color: colors.primaryDark,
-    fontWeight: "700",
-    textAlign: "right",
-    writingDirection: "rtl",
-  },
-  todayHint: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: "right",
-    writingDirection: "rtl",
-    marginTop: spacing.xs,
-  },
-  loading: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: "center",
-    marginTop: spacing.xl,
   },
   card: {
     backgroundColor: colors.surface,

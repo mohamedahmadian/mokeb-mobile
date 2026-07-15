@@ -1,8 +1,4 @@
-import {
-  isValidJalaaliDate,
-  toGregorian,
-  toJalaali,
-} from "jalaali-js";
+import { isValidJalaaliDate, toGregorian, toJalaali } from "jalaali-js";
 
 const PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
@@ -19,7 +15,11 @@ function toPersianDigits(value: string) {
   return value.replace(/\d/g, (digit) => PERSIAN_DIGITS[Number(digit)]);
 }
 
-export function formatPersianDate(isoDate: string) {
+export function formatPersianDate(
+  isoDate: string | null | undefined,
+  showMonthName: boolean = false,
+) {
+  if (!isoDate) return "";
   const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return isoDate;
 
@@ -28,6 +28,28 @@ export function formatPersianDate(isoDate: string) {
     Number(match[2]),
     Number(match[3]),
   );
+
+  if (showMonthName) {
+    // note: months are 1-based. Array is 0-based.
+    const PERSIAN_MONTHS = [
+      "فروردین",
+      "اردیبهشت",
+      "خرداد",
+      "تیر",
+      "مرداد",
+      "شهریور",
+      "مهر",
+      "آبان",
+      "آذر",
+      "دی",
+      "بهمن",
+      "اسفند",
+    ] as const;
+    const persianMonthName = PERSIAN_MONTHS[jm - 1] ?? String(jm);
+    // مثل: ۱۵ مرداد ۱۴۰۲
+    return toPersianDigits(`${jd} ${persianMonthName} ${jy}`);
+  }
+
   return toPersianDigits(
     `${jy}/${String(jm).padStart(2, "0")}/${String(jd).padStart(2, "0")}`,
   );
@@ -67,7 +89,11 @@ export function formatPersianDateParts(value: string): {
   return { jy, jm, jd };
 }
 
-export function buildPersianDate(jy: number, jm: number, jd: number): string | null {
+export function buildPersianDate(
+  jy: number,
+  jm: number,
+  jd: number,
+): string | null {
   if (!isValidJalaaliDate(jy, jm, jd)) return null;
   return toPersianDigits(
     `${jy}/${String(jm).padStart(2, "0")}/${String(jd).padStart(2, "0")}`,

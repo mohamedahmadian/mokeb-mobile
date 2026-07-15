@@ -97,7 +97,7 @@ export default function ReportsPilgrimsScreen() {
     <ScreenContainer>
       <AppHeader
         title="گزارشات زائرین"
-        subtitle="آمار بر اساس استان، شهر، جنسیت و کشور"
+        subtitle="براساس تاریخچه رزروهای ثبت شده"
         onBack={() => router.back()}
       />
 

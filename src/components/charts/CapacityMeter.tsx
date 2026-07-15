@@ -3,6 +3,32 @@ import Svg, { Circle, G } from "react-native-svg";
 import { Text } from "@/src/lib/fonts";
 import { colors, spacing, typography } from "@/src/lib/theme";
 
+export function getCapacityStateColors(
+  filled: number,
+  capacity: number,
+  remaining: number,
+) {
+  if (capacity <= 0 || filled <= 0) {
+    return {
+      stroke: "#93c5fd",
+      background: "#dbeafe",
+      text: "#3b82f6",
+    };
+  }
+  if (remaining <= 0 || filled >= capacity) {
+    return {
+      stroke: "#fca5a5",
+      background: "#fee2e2",
+      text: "#ef4444",
+    };
+  }
+  return {
+    stroke: "#86efac",
+    background: "#dcfce7",
+    text: "#22c55e",
+  };
+}
+
 type CapacityMeterProps = {
   label: string;
   capacity: number;
@@ -10,6 +36,11 @@ type CapacityMeterProps = {
   remaining: number;
   color?: string;
   compact?: boolean;
+  /** وقتی remaining === 0 */
+  completeLabel?: string;
+  completeTone?: "danger" | "success";
+  /** قالب متن باقیمانده؛ {n} با عدد جایگزین می‌شود */
+  remainingLabelTemplate?: string;
 };
 
 export function CapacityMeter({
@@ -17,9 +48,14 @@ export function CapacityMeter({
   capacity,
   filled,
   remaining,
-  color = colors.primary,
+  color,
   compact = false,
+  completeLabel = "تکمیل ظرفیت",
+  completeTone = "danger",
+  remainingLabelTemplate = "{n} باقیمانده",
 }: CapacityMeterProps) {
+  const meterColor =
+    color ?? getCapacityStateColors(filled, capacity, remaining).stroke;
   const size = compact ? 64 : 84;
   const strokeWidth = compact ? 8 : 10;
   const radiusRing = (size - strokeWidth) / 2;
@@ -47,7 +83,7 @@ export function CapacityMeter({
               cx={cx}
               cy={cy}
               r={radiusRing}
-              stroke={color}
+              stroke={meterColor}
               strokeWidth={strokeWidth}
               fill="none"
               strokeDasharray={`${circumference} ${circumference}`}
@@ -69,9 +105,26 @@ export function CapacityMeter({
         <Text style={styles.numbers}>
           {filled.toLocaleString("fa-IR")} / {capacity.toLocaleString("fa-IR")}
         </Text>
-        <Text style={styles.remaining}>
-          باقیمانده {remaining.toLocaleString("fa-IR")}
-        </Text>
+        {remaining === 0 ? (
+          <Text
+            style={[
+              styles.remaining,
+              {
+                color:
+                  completeTone === "success" ? colors.success : "#f87171",
+              },
+            ]}
+          >
+            {completeLabel}
+          </Text>
+        ) : (
+          <Text style={styles.remaining}>
+            {remainingLabelTemplate.replace(
+              "{n}",
+              remaining.toLocaleString("fa-IR"),
+            )}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -109,7 +162,6 @@ export function CapacityStatGrid({
         capacity={maleCapacity}
         filled={maleFilled}
         remaining={maleRemaining}
-        color="#0284c7"
         compact={compact}
       />
       <CapacityMeter
@@ -117,7 +169,6 @@ export function CapacityStatGrid({
         capacity={femaleCapacity}
         filled={femaleFilled}
         remaining={femaleRemaining}
-        color="#be185d"
         compact={compact}
       />
       <CapacityMeter
@@ -125,7 +176,6 @@ export function CapacityStatGrid({
         capacity={totalCapacity}
         filled={totalFilled}
         remaining={totalRemaining}
-        color={colors.accent}
         compact={compact}
       />
     </View>

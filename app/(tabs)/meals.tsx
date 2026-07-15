@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, StyleSheet, View } from "react-native";
 import { Text } from "@/src/lib/fonts";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
 import { MealReservationCard } from "@/src/components/MealReservationCard";
+import { MealDeliveryView } from "@/src/components/meals/MealDeliveryView";
 import {
   EmptyState,
   ListCard,
@@ -17,16 +18,17 @@ import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
 import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
-import { notify } from "@/src/lib/notify";
 import { colors, spacing } from "@/src/lib/theme";
 import { lookupReservation } from "@/src/services/reservations";
 
-type MealsView = "menu" | "search";
+type MealsView = "menu" | "search" | "delivery";
 
 export default function MealsScreen() {
-  const { user, ownerId } = useAuth();
-  const { mealsView, mealsRequestId } = useLocalSearchParams<{
+  const { ownerId } = useAuth();
+  const router = useRouter();
+  const { mealsView, mealsQuery, mealsRequestId } = useLocalSearchParams<{
     mealsView?: MealsView;
+    mealsQuery?: string;
     mealsRequestId?: string;
   }>();
   const handledRequestId = useRef<string | undefined>(undefined);
@@ -39,11 +41,11 @@ export default function MealsScreen() {
       return;
     }
     handledRequestId.current = mealsRequestId;
-    if (mealsView === "search") {
-      setQuery("");
+    if (mealsView === "search" || mealsQuery) {
       setActiveView("search");
+      setQuery(mealsQuery ?? "");
     }
-  }, [mealsView, mealsRequestId]);
+  }, [mealsView, mealsQuery, mealsRequestId]);
 
   const lookupQuery = useQuery({
     queryKey: ["meals-lookup", ownerId, debouncedQuery],
@@ -57,6 +59,13 @@ export default function MealsScreen() {
       await lookupQuery.refetch();
     }
   });
+
+  const headerTitle =
+    activeView === "search"
+      ? "جستجوی زائر"
+      : activeView === "delivery"
+        ? "تحویل غذا"
+        : "وعده غذایی";
 
   const results = useMemo(() => lookupQuery.data ?? [], [lookupQuery.data]);
   const showEmpty =
@@ -77,7 +86,7 @@ export default function MealsScreen() {
   return (
     <ScreenContainer>
       <AppHeader
-        title={activeView === "search" ? "جستجوی زائر" : "وعده غذایی"}
+        title={headerTitle}
         subtitle={
           activeView === "menu" ? "مدیریت برنامه و تحویل وعده‌ها" : undefined
         }
@@ -110,14 +119,20 @@ export default function MealsScreen() {
               onPress={() => openView("search")}
             />
             <ListCard
+              title="تحویل غذا"
+              titleIcon="restaurant-outline"
+              subtitle="لیست وعده‌های روز و ثبت تحویل به زائرین"
+              onPress={() => openView("delivery")}
+            />
+            <ListCard
               title="گزارش وعده غذایی"
-              titleIcon="document-text-outline"
-              subtitle="به‌زودی در نسخه‌های بعدی فعال می‌شود"
-              onPress={() =>
-                notify("توجه", "گزارش وعده غذایی هنوز پیاده‌سازی نشده است")
-              }
+              titleIcon="pie-chart-outline"
+              subtitle="نمودار تحویل وعده به‌ازای هر روز"
+              onPress={() => router.push("/menu/meal-report")}
             />
           </View>
+        ) : activeView === "delivery" ? (
+          <MealDeliveryView />
         ) : (
           <SearchBarStickyWrap>
             <SearchBar

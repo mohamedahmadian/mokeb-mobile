@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS meal_plans (
   reservationId INTEGER NOT NULL,
   date TEXT NOT NULL,
   mealType TEXT NOT NULL CHECK (mealType IN ('Breakfast', 'Lunch', 'Dinner')),
+  guestCount INTEGER NOT NULL DEFAULT 1,
   isRequired INTEGER NOT NULL DEFAULT 1,
   isServed INTEGER NOT NULL DEFAULT 0,
   servedAt TEXT,
@@ -214,6 +215,9 @@ export const USER_COLUMN_MIGRATIONS = [
   ["city", "TEXT"],
   ["address", "TEXT"],
   ["carPlate", "TEXT"],
+  ["plate_two_digit", "TEXT"],
+  ["plate_serial", "TEXT"],
+  ["plate_province", "TEXT"],
   ["description", "TEXT"],
   ["whatsapp", "TEXT"],
   ["telegram", "TEXT"],
@@ -265,4 +269,8 @@ export const MAWKIB_COLUMN_MIGRATIONS = [
   ["recordCheckInOnReservationConfirm", "INTEGER NOT NULL DEFAULT 0"],
   ["skipCapacityCheckEnabled", "INTEGER NOT NULL DEFAULT 0"],
   ["mealPlanManagementEnabled", "INTEGER NOT NULL DEFAULT 0"],
+] as const;
+
+export const MEAL_PLAN_COLUMN_MIGRATIONS = [
+  ["guestCount", "INTEGER NOT NULL DEFAULT 1"],
 ] as const;

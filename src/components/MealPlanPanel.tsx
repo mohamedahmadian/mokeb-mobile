@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/src/lib/fonts";
 import { mealTypeLabel } from "@/src/lib/labels";
+import { notify } from "@/src/lib/notify";
 import { formatPersianDate } from "@/src/lib/persianDate";
 import { colors, formTypography, radius, spacing } from "@/src/lib/theme";
 import { groupMealPlansByDate } from "@/src/services/meals";
@@ -12,17 +14,42 @@ type MealPlanPanelProps = {
   loading?: boolean;
   busyMealId?: number | null;
   onToggleRequired: (meal: MealPlan, isRequired: boolean) => void;
-  onToggleServed: (meal: MealPlan, isServed: boolean) => void;
+  onUpdateGuestCount: (meal: MealPlan, guestCount: number) => void;
+  onToggleServed: (meal: MealPlan, isServed: boolean, guestCount: number) => void;
 };
+
+function parseGuestCountInput(value: string): number | null {
+  const normalized = value.replace(/[۰-۹]/g, (digit) =>
+    String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)),
+  );
+  const parsed = Number(normalized.trim());
+  if (!Number.isFinite(parsed) || parsed < 1) return null;
+  return Math.floor(parsed);
+}
 
 export function MealPlanPanel({
   meals,
   loading = false,
   busyMealId = null,
   onToggleRequired,
+  onUpdateGuestCount,
   onToggleServed,
 }: MealPlanPanelProps) {
   const days = groupMealPlansByDate(meals);
+  const [guestCounts, setGuestCounts] = useState<Record<number, string>>({});
+  const skipBlurCommitRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setGuestCounts((current) => {
+      const next = { ...current };
+      for (const meal of meals) {
+        if (!(meal.id in next) || meal.isServed) {
+          next[meal.id] = String(meal.guestCount);
+        }
+      }
+      return next;
+    });
+  }, [meals]);
 
   if (loading) {
     return <Text style={styles.loading}>در حال بارگذاری برنامه غذایی...</Text>;
@@ -44,6 +71,39 @@ export function MealPlanPanel({
     );
   }
 
+  const commitGuestCount = (meal: MealPlan) => {
+    if (skipBlurCommitRef.current === meal.id) {
+      skipBlurCommitRef.current = null;
+      return;
+    }
+
+    const parsed = parseGuestCountInput(guestCounts[meal.id] ?? "");
+    if (parsed == null) {
+      setGuestCounts((current) => ({
+        ...current,
+        [meal.id]: String(meal.guestCount),
+      }));
+      return;
+    }
+    if (parsed !== meal.guestCount) {
+      onUpdateGuestCount(meal, parsed);
+    }
+  };
+
+  const handleServe = (meal: MealPlan) => {
+    if (meal.isServed) {
+      onToggleServed(meal, false, meal.guestCount);
+      return;
+    }
+
+    const parsed = parseGuestCountInput(guestCounts[meal.id] ?? "");
+    if (parsed == null) {
+      notify("خطا", "تعداد نفرات باید حداقل ۱ باشد");
+      return;
+    }
+    onToggleServed(meal, true, parsed);
+  };
+
   return (
     <View style={styles.wrap}>
       <Text style={styles.heading}>برنامه غذایی</Text>
@@ -52,6 +112,10 @@ export function MealPlanPanel({
           <Text style={styles.dayTitle}>{formatPersianDate(date)}</Text>
           {dayMeals.map((meal) => {
             const busy = busyMealId === meal.id;
+            const countDisabled = !meal.isRequired || meal.isServed || busy;
+            const countValue =
+              guestCounts[meal.id] ?? String(meal.guestCount);
+
             return (
               <View key={meal.id} style={styles.mealRow}>
                 <Pressable
@@ -78,6 +142,30 @@ export function MealPlanPanel({
                   </Text>
                 </Pressable>
 
+                <View style={styles.countWrap}>
+                  <Text style={styles.countLabel}>تعداد</Text>
+                  <TextInput
+                    style={[
+                      styles.countInput,
+                      countDisabled && styles.countInputDisabled,
+                      meal.isServed && styles.countInputServed,
+                    ]}
+                    value={countValue}
+                    editable={!countDisabled}
+                    keyboardType="number-pad"
+                    placeholder="۱"
+                    placeholderTextColor={colors.textSubtle}
+                    textAlign="center"
+                    onChangeText={(text) =>
+                      setGuestCounts((current) => ({
+                        ...current,
+                        [meal.id]: text,
+                      }))
+                    }
+                    onBlur={() => commitGuestCount(meal)}
+                  />
+                </View>
+
                 <Pressable
                   style={[
                     styles.serveButton,
@@ -85,7 +173,10 @@ export function MealPlanPanel({
                     (!meal.isRequired || busy) && styles.serveButtonDisabled,
                   ]}
                   disabled={!meal.isRequired || busy}
-                  onPress={() => onToggleServed(meal, !meal.isServed)}
+                  onPressIn={() => {
+                    skipBlurCommitRef.current = meal.id;
+                  }}
+                  onPress={() => handleServe(meal)}
                 >
                   <Ionicons
                     name={
@@ -102,7 +193,9 @@ export function MealPlanPanel({
                       meal.isServed && styles.serveButtonTextDone,
                     ]}
                   >
-                    {meal.isServed ? "تحویل شده" : "تحویل"}
+                    {meal.isServed
+                      ? `تحویل ${meal.guestCount.toLocaleString("fa-IR")} نفر`
+                      : "تحویل"}
                   </Text>
                 </Pressable>
               </View>
@@ -185,6 +278,35 @@ const styles = StyleSheet.create({
   mealLabelMuted: {
     color: colors.textSubtle,
     textDecorationLine: "line-through",
+  },
+  countWrap: {
+    alignItems: "center",
+    gap: 2,
+  },
+  countLabel: {
+    ...formTypography.caption,
+    color: colors.textMuted,
+    fontSize: 10,
+  },
+  countInput: {
+    width: 52,
+    minHeight: 34,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    ...formTypography.body,
+    color: colors.text,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  countInputDisabled: {
+    opacity: 0.45,
+    backgroundColor: colors.surface,
+  },
+  countInputServed: {
+    borderColor: colors.success,
+    backgroundColor: colors.successLight,
   },
   serveButton: {
     flexDirection: "row-reverse",

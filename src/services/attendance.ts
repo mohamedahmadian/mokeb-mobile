@@ -1,5 +1,7 @@
 import { getDatabase } from "@/src/db/client";
+import { todayDateStringInAppTz } from "@/src/lib/date-only";
 import { reservationRowMatchesQuery } from "@/src/lib/reservation-lookup";
+import { reservationOccupiesDay } from "@/src/lib/reservation-occupancy";
 import type {
   Reservation,
   ReservationEvent,
@@ -424,8 +426,109 @@ export function getAttendanceActionVisibility(
     canTempIn: isActive && presence === "TEMPORARILY_OUT",
     canFinalCheckout:
       isActive &&
+      !!reservation.actualCheckInAt &&
       !reservation.actualCheckOutAt &&
       (presence === "PRESENT" || presence === "TEMPORARILY_OUT"),
   };
+}
+
+export type BulkAttendanceAction = "check_in" | "check_out";
+
+export type BulkAttendanceResult = {
+  processed: number;
+  skipped: number;
+};
+
+function bulkAttendanceEventType(
+  reservation: Reservation,
+  action: BulkAttendanceAction,
+): ReservationEventType | null {
+  const visibility = getAttendanceActionVisibility(reservation);
+
+  if (action === "check_in") {
+    if (visibility.canInitialCheckIn) return "CHECK_IN";
+    if (visibility.canTempIn) return "TEMP_IN";
+    return null;
+  }
+
+  if (visibility.canTempOut) return "TEMP_OUT";
+  return null;
+}
+
+export function countBulkAttendanceEligible(
+  reservations: Reservation[],
+  action: BulkAttendanceAction,
+): number {
+  return reservations.filter(
+    (reservation) => bulkAttendanceEventType(reservation, action) != null,
+  ).length;
+}
+
+export async function listTodayOccupyingActiveReservations(
+  ownerUserId: number,
+  mawkibId: number,
+): Promise<Reservation[]> {
+  const db = await getDatabase();
+  const today = todayDateStringInAppTz();
+
+  const rows = await db.getAllAsync<
+    Reservation & {
+      mawkibName: string;
+      pilgrimName: string;
+      pilgrimNationalId?: string | null;
+    }
+  >(
+    `SELECT r.*, m.name as mawkibName, p.fullName as pilgrimName,
+            p.nationalId as pilgrimNationalId
+     FROM reservations r
+     INNER JOIN mawkibs m ON m.id = r.mawkibId
+     INNER JOIN users p ON p.id = r.pilgrimUserId
+     WHERE m.ownerUserId = ?
+       AND r.mawkibId = ?
+       AND r.status = 'Confirmed'
+     ORDER BY r.createdAt DESC`,
+    [ownerUserId, mawkibId],
+  );
+
+  return rows.filter((row) =>
+    reservationOccupiesDay(
+      {
+        reservationDate: row.reservationDate,
+        reservationEndDate: row.reservationEndDate,
+      },
+      today,
+    ),
+  );
+}
+
+export async function recordBulkAttendance(
+  ownerUserId: number,
+  mawkibId: number,
+  action: BulkAttendanceAction,
+): Promise<BulkAttendanceResult> {
+  const reservations = await listTodayOccupyingActiveReservations(
+    ownerUserId,
+    mawkibId,
+  );
+
+  let processed = 0;
+  let skipped = 0;
+
+  for (const reservation of reservations) {
+    const eventType = bulkAttendanceEventType(reservation, action);
+    if (!eventType) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      await recordAttendanceEvent(ownerUserId, reservation.id, eventType);
+      processed += 1;
+    } catch {
+      skipped += 1;
+    }
+  }
+
+  return { processed, skipped };
 }
 

@@ -48,6 +48,9 @@ export interface User {
   city?: string | null;
   address?: string | null;
   carPlate?: string | null;
+  plateTwoDigit?: string | null;
+  plateSerial?: string | null;
+  plateProvince?: string | null;
   description?: string | null;
   whatsapp?: string | null;
   telegram?: string | null;
@@ -77,6 +80,9 @@ export type UserProfileInput = Partial<
     | "city"
     | "address"
     | "carPlate"
+    | "plateTwoDigit"
+    | "plateSerial"
+    | "plateProvince"
     | "description"
     | "whatsapp"
     | "telegram"
@@ -173,6 +179,8 @@ export interface MealPlan {
   reservationId: number;
   date: string;
   mealType: MealType;
+  /** تعداد نفرات / وعده غذایی برای این وعده */
+  guestCount: number;
   isRequired: boolean;
   isServed: boolean;
   servedAt?: string | null;
@@ -214,7 +222,36 @@ export interface PilgrimListFilters {
   province?: string;
   city?: string;
   mawkibId?: number;
+  country?: string;
+  carPlate?: string;
+  plateTwoDigit?: string;
+  plateSerial?: string;
+  plateProvince?: string;
+  passportNumber?: string;
+  gender?: UserGender;
+  description?: string;
 }
+
+export type PilgrimFilterFormState = {
+  country: string;
+  province: string;
+  city: string;
+  plateTwoDigit: string;
+  plateSerial: string;
+  plateProvince: string;
+  passportNumber: string;
+  gender: UserGender | "";
+  description: string;
+};
+
+export type ReservationFilterFormState = {
+  pilgrimName: string;
+  trackingCode: string;
+  createdAtDate: string;
+  startDate: string;
+  endDate: string;
+  description: string;
+};
 
 export interface ReservationListFilters {
   query?: string;
@@ -223,6 +260,12 @@ export interface ReservationListFilters {
   mawkibId?: number;
   dateFrom?: string;
   dateTo?: string;
+  pilgrimName?: string;
+  trackingCode?: string;
+  createdAt?: string;
+  reservationDate?: string;
+  reservationEndDate?: string;
+  description?: string;
 }
 
 export interface MawkibListFilters {

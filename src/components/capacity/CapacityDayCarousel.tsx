@@ -9,7 +9,10 @@ import {
   View,
 } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CapacityStatGrid } from "@/src/components/charts";
+import {
+  CapacityStatGrid,
+  getCapacityStateColors,
+} from "@/src/components/charts";
 import { Text } from "@/src/lib/fonts";
 import { fontFamilies } from "@/src/lib/fonts";
 import { formatPersianDate, formatPersianNumber } from "@/src/lib/persianDate";
@@ -46,6 +49,11 @@ function CapacityMawkibCard({
     snapshot.totalCapacity > 0
       ? Math.round((snapshot.totalFilled / snapshot.totalCapacity) * 100)
       : 0;
+  const occupancyColors = getCapacityStateColors(
+    snapshot.totalFilled,
+    snapshot.totalCapacity,
+    snapshot.totalRemaining,
+  );
 
   return (
     <Pressable
@@ -57,8 +65,18 @@ function CapacityMawkibCard({
       ]}
     >
       <View style={styles.capacityCardHeader}>
-        <View style={styles.capacityOccupancy}>
-          <Text style={styles.capacityOccupancyValue}>
+        <View
+          style={[
+            styles.capacityOccupancy,
+            { backgroundColor: occupancyColors.background },
+          ]}
+        >
+          <Text
+            style={[
+              styles.capacityOccupancyValue,
+              { color: occupancyColors.text },
+            ]}
+          >
             {formatPersianNumber(occupancy)}٪
           </Text>
         </View>
@@ -66,11 +84,11 @@ function CapacityMawkibCard({
           <Text style={styles.capacityName}>
             {snapshot.name} ({formatPersianDate(snapshot.date)})
           </Text>
-          <Text style={styles.capacitySummary}>
+          {/* <Text style={styles.capacitySummary}>
             {formatPersianNumber(snapshot.totalFilled)}/
             {formatPersianNumber(snapshot.totalCapacity)} - (
             {formatPersianNumber(snapshot.totalRemaining)} خالی)
-          </Text>
+          </Text> */}
         </View>
       </View>
       <CapacityStatGrid
@@ -286,7 +304,92 @@ export function CapacityDayCarousel({
 
   return (
     <View style={styles.section}>
-      <View style={styles.dayNav}>
+      {onOpenCalendar ? (
+        <Pressable
+          style={({ pressed }) => [
+            styles.calendarCta,
+            pressed && styles.capacityCardPressed,
+          ]}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              width: "100%",
+              ...styles.calendarCta,
+            }}
+          >
+            <View
+              style={{
+                flex: 1,
+                alignItems: "flex-start",
+                paddingLeft: spacing.lg,
+              }}
+            >
+              <Text
+                style={[
+                  styles.calendarCtaText,
+                  {
+                    fontSize: 12,
+                    textAlign: "left",
+                    color: colors.textMuted,
+                  },
+                ]}
+              >
+                {(() => {
+                  // تاریخ روز جاری (امروز) قمری با استفاده از toLocaleDateString و لوکال ar-SA + islamic calendar
+                  try {
+                    const today = new Date();
+                    return today.toLocaleDateString("ar-SA-u-ca-islamic", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    });
+                  } catch {
+                    return "";
+                  }
+                })()}
+              </Text>
+              <Text
+                style={[
+                  styles.calendarCtaText,
+                  {
+                    fontSize: 13,
+                    textAlign: "left",
+                    color: colors.textSubtle,
+                    marginTop: 2,
+                  },
+                ]}
+              >
+                {(() => {
+                  // تاریخ میلادی امروز
+                  try {
+                    const today = new Date();
+                    return today.toLocaleDateString("en-GB", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    });
+                  } catch {
+                    return "";
+                  }
+                })()}
+              </Text>
+            </View>
+
+            <Text
+              style={[
+                styles.calendarCtaText,
+                { textAlign: "right", flex: 1, paddingRight: spacing.lg },
+              ]}
+            >
+              امروز : {formatPersianDate(todayDateStringInAppTz(), true)}
+            </Text>
+          </View>
+        </Pressable>
+      ) : null}
+
+      <View style={[styles.dayNav, { marginTop: spacing.sm }]}>
         <Pressable
           onPress={() => goToIndex(activeIndex + 1)}
           hitSlop={8}
@@ -304,10 +407,9 @@ export function CapacityDayCarousel({
         </Pressable>
         <View style={styles.dayNavCenter}>
           <Text style={styles.dayNavDate}>
+            {isToday ? " (امروز) " : ""}
             {formatPersianDate(activeDate)}
-            {isToday ? " (امروز)" : ""}
           </Text>
-          <Text style={styles.dayNavHint}>برای تغییر روز اسلاید کنید</Text>
         </View>
         <Pressable
           onPress={() => goToIndex(activeIndex - 1)}
@@ -334,18 +436,6 @@ export function CapacityDayCarousel({
         onIndexChange={setActiveIndex}
         listRef={listRef}
       />
-
-      {onOpenCalendar ? (
-        <Pressable
-          onPress={() => onOpenCalendar()}
-          style={({ pressed }) => [
-            styles.calendarCta,
-            pressed && styles.capacityCardPressed,
-          ]}
-        >
-          <Text style={styles.calendarCtaText}>....</Text>
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -474,13 +564,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 8,
     borderRadius: radius.sm,
-    backgroundColor: colors.accentLight,
     alignItems: "center",
   },
   capacityOccupancyValue: {
     fontFamily: fontFamilies.bold,
     fontSize: 13,
-    color: colors.accent,
   },
   calendarCta: {
     marginHorizontal: spacing.lg,
