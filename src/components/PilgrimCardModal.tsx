@@ -13,6 +13,7 @@ import { Text } from "@/src/lib/fonts";
 import { PilgrimCard } from "@/src/components/PilgrimCard";
 import { PrimaryButton } from "@/src/components/ui";
 import { notify } from "@/src/lib/notify";
+import { useAppBackHandler } from "@/src/hooks/useAppBackHandler";
 import {
   downloadPilgrimCardImage,
   sharePilgrimCardImage,
@@ -37,6 +38,14 @@ export function PilgrimCardModal({
   const cardRef = useRef<View>(null);
   const [busyAction, setBusyAction] = useState<"download" | "share" | null>(
     null,
+  );
+
+  useAppBackHandler(
+    () => {
+      onClose();
+      return true;
+    },
+    visible,
   );
 
   const handleDownload = async () => {
@@ -143,11 +152,9 @@ export function PilgrimCardModal({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    direction: "rtl",
     backgroundColor: colors.background,
   },
   header: {
-    direction: "rtl",
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
@@ -172,7 +179,6 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
   },
   content: {
-    direction: "rtl",
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
   },

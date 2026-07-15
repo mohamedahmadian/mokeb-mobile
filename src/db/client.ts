@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import {
+  EXTRA_TABLES_SQL,
   MAWKIB_COLUMN_MIGRATIONS,
   MIGRATION_SQL,
   SEED_ROLES_SQL,
@@ -37,6 +38,7 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
     await db.execAsync(MIGRATION_SQL);
     await migrateColumns(db, "users", USER_COLUMN_MIGRATIONS);
     await migrateColumns(db, "mawkibs", MAWKIB_COLUMN_MIGRATIONS);
+    await db.execAsync(EXTRA_TABLES_SQL);
     await db.execAsync(SEED_ROLES_SQL);
     database = db;
     return db;
@@ -51,10 +53,4 @@ export function boolFromDb(value: number | null | undefined): boolean {
 
 export function boolToDb(value: boolean): number {
   return value ? 1 : 0;
-}
-
-export function generateTrackingCode(): string {
-  const part = Math.random().toString(36).slice(2, 8).toUpperCase();
-  const num = Math.floor(1000 + Math.random() * 9000);
-  return `MK${num}${part}`;
 }

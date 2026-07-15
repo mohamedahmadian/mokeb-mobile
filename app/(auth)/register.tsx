@@ -46,7 +46,7 @@ export default function RegisterScreen() {
     <ScreenContainer>
       <AppHeader
         title="ثبت‌نام موکب‌دار"
-        subtitle="حساب محلی • بدون نیاز به اینترنت"
+        subtitle=""
         onBack={() => router.back()}
         showProfile={false}
       />
@@ -56,7 +56,11 @@ export default function RegisterScreen() {
       >
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.card}>
-            <AppInput label="نام و نام خانوادگی" value={fullName} onChangeText={setFullName} />
+            <AppInput
+              label="نام و نام خانوادگی"
+              value={fullName}
+              onChangeText={setFullName}
+            />
             <AppInput
               label="شماره موبایل"
               value={mobileNumber}

@@ -1,6 +1,5 @@
 import {
   StyleSheet,
-  I18nManager,
   Text as RNText,
   TextInput as RNTextInput,
   type StyleProp,
@@ -9,18 +8,9 @@ import {
   type TextStyle,
 } from "react-native";
 import React from "react";
+import { fontFamilies } from "@/src/lib/font-assets";
 
-export const fontFamilies = {
-  regular: "Vazir",
-  medium: "Vazir-Medium",
-  bold: "Vazir-Bold",
-} as const;
-
-export const fontAssets = {
-  Vazir: require("../../assets/fonts/Vazir.ttf"),
-  "Vazir-Medium": require("../../assets/fonts/Vazir-Medium.ttf"),
-  "Vazir-Bold": require("../../assets/fonts/Vazir-Bold.ttf"),
-} as const;
+export { fontFamilies, fontAssets } from "@/src/lib/font-assets";
 
 function resolveFontFamily(style: StyleProp<TextStyle>): string {
   const flat = StyleSheet.flatten(style);
@@ -48,32 +38,21 @@ function resolveFontFamily(style: StyleProp<TextStyle>): string {
   return fontFamilies.regular;
 }
 
-/**
- * Map requested alignment to the value React Native will render correctly.
- * When doLeftAndRightSwapInRTL is on, physical left/right are inverted.
- * We always want "right" in styles to mean the visual right side of the screen.
- */
-function resolvePhysicalTextAlign(
+function resolveTextAlign(
   style: StyleProp<TextStyle>,
   requested?: TextStyle["textAlign"] | TextInputProps["textAlign"],
 ): "left" | "center" | "right" {
   const align =
     requested ?? StyleSheet.flatten(style)?.textAlign ?? "right";
-
-  if (align === "center") return "center";
-
-  const swap =
-    I18nManager.isRTL && I18nManager.doLeftAndRightSwapInRTL === true;
-
-  // Authors write "right"/"left" for visual sides. If RN swaps L/R in RTL,
-  // invert so the visual result matches the author's intent.
-  if (align === "left") return swap ? "right" : "left";
-  return swap ? "left" : "right";
+  if (align === "left" || align === "center" || align === "right") {
+    return align;
+  }
+  return "right";
 }
 
 export function Text(props: TextProps) {
   const fontFamily = resolveFontFamily(props.style);
-  const textAlign = resolvePhysicalTextAlign(props.style);
+  const textAlign = resolveTextAlign(props.style);
   return (
     <RNText
       {...props}
@@ -81,6 +60,7 @@ export function Text(props: TextProps) {
         {
           fontFamily,
           writingDirection: "rtl",
+          textAlign: "right",
         },
         props.style,
         { textAlign },
@@ -89,21 +69,25 @@ export function Text(props: TextProps) {
   );
 }
 
-export function TextInput(props: TextInputProps) {
-  const fontFamily = resolveFontFamily(props.style);
-  const textAlign = resolvePhysicalTextAlign(props.style, props.textAlign);
-  return (
-    <RNTextInput
-      {...props}
-      textAlign={textAlign}
-      style={[
-        {
-          fontFamily,
-          writingDirection: "rtl",
-        },
-        props.style,
-        { textAlign },
-      ]}
-    />
-  );
-}
+export const TextInput = React.forwardRef<RNTextInput, TextInputProps>(
+  function TextInput(props, ref) {
+    const fontFamily = resolveFontFamily(props.style);
+    const textAlign = resolveTextAlign(props.style, props.textAlign);
+    return (
+      <RNTextInput
+        ref={ref}
+        {...props}
+        textAlign={textAlign}
+        style={[
+          {
+            fontFamily,
+            writingDirection: "rtl",
+            textAlign: "right",
+          },
+          props.style,
+          { textAlign },
+        ]}
+      />
+    );
+  },
+);

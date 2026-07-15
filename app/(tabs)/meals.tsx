@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { RefreshControl, StyleSheet, View } from "react-native";
 import { Text } from "@/src/lib/fonts";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
@@ -9,11 +9,14 @@ import {
   EmptyState,
   ListCard,
   ScreenContainer,
+  ScreenScroll,
   SearchBar,
   SearchBarStickyWrap,
 } from "@/src/components/ui";
+import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
+import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { notify } from "@/src/lib/notify";
 import { colors, spacing } from "@/src/lib/theme";
 import { lookupReservation } from "@/src/services/reservations";
@@ -21,7 +24,7 @@ import { lookupReservation } from "@/src/services/reservations";
 type MealsView = "menu" | "search";
 
 export default function MealsScreen() {
-  const { user } = useAuth();
+  const { user, ownerId } = useAuth();
   const { mealsView, mealsRequestId } = useLocalSearchParams<{
     mealsView?: MealsView;
     mealsRequestId?: string;
@@ -43,10 +46,16 @@ export default function MealsScreen() {
   }, [mealsView, mealsRequestId]);
 
   const lookupQuery = useQuery({
-    queryKey: ["meals-lookup", user?.id, debouncedQuery],
-    enabled: activeView === "search" && !!user && debouncedQuery.length > 0,
+    queryKey: ["meals-lookup", ownerId, debouncedQuery],
+    enabled: activeView === "search" && !!ownerId && debouncedQuery.length > 0,
     placeholderData: keepPreviousData,
-    queryFn: () => lookupReservation(user!.id, debouncedQuery),
+    queryFn: () => lookupReservation(ownerId!, debouncedQuery),
+  });
+
+  const { refreshing, onRefresh } = usePullToRefresh(async () => {
+    if (activeView === "search" && debouncedQuery.length > 0) {
+      await lookupQuery.refetch();
+    }
   });
 
   const results = useMemo(() => lookupQuery.data ?? [], [lookupQuery.data]);
@@ -73,21 +82,31 @@ export default function MealsScreen() {
           activeView === "menu" ? "مدیریت برنامه و تحویل وعده‌ها" : undefined
         }
         onBack={activeView !== "menu" ? closeView : undefined}
+        showLogo
       />
 
-      <ScrollView
-        style={styles.scroll}
+      <ScreenScroll
         contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="always"
         keyboardDismissMode="on-drag"
         stickyHeaderIndices={activeView === "search" ? [0] : undefined}
+        refreshControl={
+          activeView === "search" ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+              progressBackgroundColor={colors.surface}
+            />
+          ) : undefined
+        }
       >
         {activeView === "menu" ? (
           <View style={styles.menu}>
             <ListCard
               title="جستجوی زائر"
               titleIcon="search-outline"
-              subtitle="جستجو با کد رزرو، موبایل یا کد ملی و مدیریت برنامه غذایی"
+              subtitle="جستجو با نام، کد رزرو، موبایل یا کد ملی و مدیریت برنامه غذایی"
               onPress={() => openView("search")}
             />
             <ListCard
@@ -104,7 +123,9 @@ export default function MealsScreen() {
             <SearchBar
               value={query}
               onChangeText={setQuery}
-              placeholder="کد رزرو، موبایل یا کد ملی"
+              placeholder="نام و نام خانوادگی، کد رزرو، موبایل یا کد ملی"
+              autoFocus
+              flushRight
             />
           </SearchBarStickyWrap>
         )}
@@ -115,7 +136,7 @@ export default function MealsScreen() {
               <EmptyState
                 icon="search-outline"
                 title="جستجوی زائر"
-                description="کد رزرو، شماره موبایل یا کد ملی زائر را وارد کنید."
+                description="نام و نام خانوادگی، کد رزرو، شماره موبایل یا کد ملی زائر را وارد کنید."
               />
             ) : null}
 
@@ -135,23 +156,20 @@ export default function MealsScreen() {
               <MealReservationCard
                 key={reservation.id}
                 reservation={reservation}
+                searchMode
               />
             ))}
           </>
         ) : null}
-      </ScrollView>
+      </ScreenScroll>
+      <NewReservationFab />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    direction: "rtl",
-  },
   content: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -159,7 +177,6 @@ const styles = StyleSheet.create({
   },
   menu: {
     width: "100%",
-    direction: "rtl",
     gap: spacing.md,
     marginTop: spacing.md,
   },

@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "@/src/lib/fonts";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
+import { NewReservationFab } from "@/src/components/NewReservationFab";
 import {
   ListCard,
   PrimaryButton,
@@ -15,15 +16,40 @@ import {
   userFormToInput,
 } from "@/src/components/UserProfileForm";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { notify } from "@/src/lib/notify";
 import { colors, spacing, typography } from "@/src/lib/theme";
 
 export default function ProfileScreen() {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, refreshUser } = useAuth();
   const router = useRouter();
+  const { profileView, profileRequestId } = useLocalSearchParams<{
+    profileView?: string;
+    profileRequestId?: string;
+  }>();
+  const handledRequestId = useRef<string | undefined>(undefined);
   const [form, setForm] = useState(() => createUserFormData(user));
   const [saving, setSaving] = useState(false);
   const [activeView, setActiveView] = useState<"menu" | "edit">("menu");
+
+  const { refreshing, onRefresh } = usePullToRefresh(async () => {
+    await refreshUser();
+  });
+
+  useEffect(() => {
+    setForm(createUserFormData(user));
+  }, [user]);
+
+  useEffect(() => {
+    if (!profileRequestId || handledRequestId.current === profileRequestId) {
+      return;
+    }
+    handledRequestId.current = profileRequestId;
+    if (profileView === "edit") {
+      setForm(createUserFormData(user));
+      setActiveView("edit");
+    }
+  }, [profileView, profileRequestId, user]);
 
   const handleSave = async () => {
     try {
@@ -42,7 +68,9 @@ export default function ProfileScreen() {
     <ScreenContainer>
       <AppHeader
         title={activeView === "edit" ? "ویرایش اطلاعات شخصی" : "پروفایل"}
-        subtitle={activeView === "menu" ? user?.mobileNumber ?? "" : undefined}
+        subtitle={
+          activeView === "menu" ? (user?.mobileNumber ?? "") : undefined
+        }
         showProfile={false}
         onBack={
           activeView === "edit"
@@ -51,12 +79,23 @@ export default function ProfileScreen() {
         }
       />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+            progressBackgroundColor={colors.surface}
+          />
+        }
+      >
         {activeView === "menu" ? (
           <>
             <View style={styles.hero}>
               <Text style={styles.heroName}>{user?.fullName}</Text>
-              <Text style={styles.heroMeta}>موکب‌دار • آفلاین</Text>
+              <Text style={styles.heroMeta}>موکب‌دار</Text>
             </View>
 
             <View style={styles.menuList}>
@@ -113,6 +152,7 @@ export default function ProfileScreen() {
           />
         </StickyBottomAction>
       ) : null}
+      <NewReservationFab bottomOffset={activeView === "edit" ? 72 : 0} />
     </ScreenContainer>
   );
 }
@@ -128,8 +168,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
     borderRadius: 16,
     padding: spacing.lg,
-    // RTL: flex-start = سمت راست
-    alignItems: "flex-start",
+    alignItems: "flex-end",
   },
   heroName: {
     ...typography.title,

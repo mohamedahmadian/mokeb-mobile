@@ -10,6 +10,7 @@ import type {
 type MawkibRow = {
   id: number;
   name: string;
+  mawkibType: string | null;
   address: string;
   neshanAddressUrl: string | null;
   latitude: number | null;
@@ -60,6 +61,7 @@ type MawkibRow = {
 
 export type MawkibInput = {
   name: string;
+  mawkibType?: string;
   address: string;
   neshanAddressUrl?: string;
   latitude?: number | null;
@@ -134,6 +136,7 @@ function validateMawkibInput(input: MawkibInput) {
 function mawkibInputValues(input: MawkibInput) {
   return [
     input.name.trim(),
+    optionalText(input.mawkibType),
     input.address.trim(),
     optionalText(input.neshanAddressUrl),
     input.latitude ?? null,
@@ -182,6 +185,7 @@ function mawkibInputValues(input: MawkibInput) {
 
 const EDITABLE_MAWKIB_COLUMNS = [
   "name",
+  "mawkibType",
   "address",
   "neshanAddressUrl",
   "latitude",
@@ -231,6 +235,7 @@ function mapMawkib(row: MawkibRow): Mawkib {
   return {
     id: row.id,
     name: row.name,
+    mawkibType: row.mawkibType,
     address: row.address,
     neshanAddressUrl: row.neshanAddressUrl,
     latitude: row.latitude,
@@ -293,9 +298,11 @@ export async function listMawkibs(
   const params: (string | number)[] = [ownerUserId];
 
   if (filters.query) {
-    clauses.push("(name LIKE ? OR address LIKE ? OR phoneNumber LIKE ?)");
+    clauses.push(
+      "(name LIKE ? OR mawkibType LIKE ? OR address LIKE ? OR phoneNumber LIKE ?)",
+    );
     const q = `%${filters.query.trim()}%`;
-    params.push(q, q, q);
+    params.push(q, q, q, q);
   }
   if (filters.status) {
     clauses.push("status = ?");

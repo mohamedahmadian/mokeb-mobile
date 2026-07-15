@@ -1,20 +1,22 @@
+import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { AttendanceEventTimeline } from "@/src/components/AttendanceEventTimeline";
+import { PendingDeliveredItemsCheckoutModal } from "@/src/components/PendingDeliveredItemsCheckoutModal";
 import { ListCard, PrimaryButton } from "@/src/components/ui";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { formatTimeFromIso } from "@/src/lib/format-time";
-import {
-  presenceStateLabel,
-  reservationStatusLabel,
-} from "@/src/lib/labels";
+import { presenceStateLabel } from "@/src/lib/labels";
 import { notify } from "@/src/lib/notify";
-import { formatPersianDate } from "@/src/lib/persianDate";
+import {
+  getReservationSearchCardDetails,
+  getReservationSearchCardStyle,
+} from "@/src/lib/reservation-search-card";
 import { colors, spacing } from "@/src/lib/theme";
 import {
   getAttendanceActionVisibility,
   listAttendanceEvents,
 } from "@/src/services/attendance";
+import { listPendingDeliveredItemsByReservation } from "@/src/services/delivered-items";
 import type { Reservation, ReservationEventType } from "@/src/types";
 
 type AttendanceReservationCardProps = {
@@ -45,17 +47,19 @@ export function AttendanceReservationCard({
   loadingAction = null,
   onAction,
 }: AttendanceReservationCardProps) {
-  const { user } = useAuth();
+  const { user, ownerId } = useAuth();
   const visibility = getAttendanceActionVisibility(reservation);
   const presenceColors = presenceBadgeColor(reservation.presenceState);
+  const [pendingItemsModalVisible, setPendingItemsModalVisible] =
+    useState(false);
 
   const eventsQuery = useQuery({
-    queryKey: ["attendance-events", user?.id, reservation.id],
-    enabled: !!user,
-    queryFn: () => listAttendanceEvents(user!.id, reservation.id),
+    queryKey: ["attendance-events", ownerId, reservation.id],
+    enabled: !!ownerId,
+    queryFn: () => listAttendanceEvents(ownerId!, reservation.id),
   });
 
-  const handleFinalCheckout = () => {
+  const confirmFinalCheckout = () => {
     notify(
       "خروج نهایی",
       `آیا از ثبت خروج نهایی «${reservation.pilgrimName ?? "زائر"}» مطمئن هستید؟ پس از خروج نهایی، رزرو تکمیل می‌شود.`,
@@ -70,11 +74,21 @@ export function AttendanceReservationCard({
     );
   };
 
-  const guestSummary = `${reservation.maleGuestCount.toLocaleString("fa-IR")} مرد${
-    reservation.femaleGuestCount > 0
-      ? ` • ${reservation.femaleGuestCount.toLocaleString("fa-IR")} زن`
-      : ""
-  }`;
+  const handleFinalCheckout = async () => {
+    if (!ownerId) return;
+
+    const pendingItems = await listPendingDeliveredItemsByReservation(
+      ownerId,
+      reservation.id,
+    );
+
+    if (pendingItems.length > 0) {
+      setPendingItemsModalVisible(true);
+      return;
+    }
+
+    confirmFinalCheckout();
+  };
 
   return (
     <View style={styles.wrap}>
@@ -84,61 +98,8 @@ export function AttendanceReservationCard({
         badge={presenceStateLabel[reservation.presenceState]}
         badgeColor={presenceColors.bg}
         badgeTextColor={presenceColors.text}
-        details={[
-          {
-            icon: "barcode-outline",
-            label: "شناسه رزرو",
-            value: reservation.trackingCode,
-          },
-          {
-            icon: "call-outline",
-            label: "موبایل",
-            value: reservation.pilgrimMobile,
-          },
-          ...(reservation.pilgrimNationalId
-            ? [
-                {
-                  icon: "id-card-outline" as const,
-                  label: "کد ملی",
-                  value: reservation.pilgrimNationalId,
-                },
-              ]
-            : []),
-          {
-            icon: "home-outline",
-            label: "موکب",
-            value: reservation.mawkibName ?? "نامشخص",
-          },
-          {
-            icon: "calendar-outline",
-            label: "تاریخ اقامت",
-            value: `${formatPersianDate(reservation.reservationDate)} تا ${formatPersianDate(reservation.reservationEndDate)}`,
-          },
-          {
-            icon: "people-outline",
-            label: "تعداد",
-            value: guestSummary,
-          },
-          {
-            icon: "log-in-outline",
-            label: reservation.actualCheckInAt ? "ورود واقعی" : "ساعت ورود",
-            value: reservation.actualCheckInAt
-              ? formatTimeFromIso(reservation.actualCheckInAt)
-              : "ثبت نشده",
-          },
-          {
-            icon: "log-out-outline",
-            label: reservation.actualCheckOutAt ? "خروج واقعی" : "ساعت خروج",
-            value: reservation.actualCheckOutAt
-              ? formatTimeFromIso(reservation.actualCheckOutAt)
-              : "ثبت نشده",
-          },
-          {
-            icon: "information-circle-outline",
-            label: "وضعیت رزرو",
-            value: reservationStatusLabel[reservation.status],
-          },
-        ]}
+        style={getReservationSearchCardStyle(reservation.status)}
+        details={getReservationSearchCardDetails(reservation)}
         footer={
           <View style={styles.actions}>
             <View style={styles.leftSide}>
@@ -200,6 +161,13 @@ export function AttendanceReservationCard({
       <AttendanceEventTimeline
         events={eventsQuery.data ?? []}
         loading={eventsQuery.isLoading}
+      />
+
+      <PendingDeliveredItemsCheckoutModal
+        visible={pendingItemsModalVisible}
+        reservation={reservation}
+        onClose={() => setPendingItemsModalVisible(false)}
+        onProceedCheckout={confirmFinalCheckout}
       />
     </View>
   );

@@ -6,7 +6,7 @@ export default function MenuLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: colors.background },
+        contentStyle: { flex: 1, backgroundColor: colors.background },
         animation: "slide_from_left",
       }}
     />

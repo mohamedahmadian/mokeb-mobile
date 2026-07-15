@@ -116,7 +116,6 @@ export function MealPlanPanel({
 
 const styles = StyleSheet.create({
   wrap: {
-    direction: "rtl",
     gap: spacing.md,
   },
   heading: {
@@ -132,7 +131,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   empty: {
-    direction: "rtl",
     alignItems: "center",
     gap: spacing.sm,
     padding: spacing.lg,
@@ -152,7 +150,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   dayCard: {
-    direction: "rtl",
     gap: spacing.sm,
     padding: spacing.md,
     borderRadius: radius.lg,
@@ -168,8 +165,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   mealRow: {
-    direction: "ltr",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.sm,
@@ -177,8 +173,7 @@ const styles = StyleSheet.create({
   },
   checkboxRow: {
     flex: 1,
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     gap: spacing.sm,
   },
@@ -192,8 +187,7 @@ const styles = StyleSheet.create({
     textDecorationLine: "line-through",
   },
   serveButton: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     gap: spacing.xs,
     minHeight: 34,

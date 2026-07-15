@@ -5,22 +5,38 @@ import { Toaster as NativeToaster } from "sonner-native";
 import { webToastOptions } from "@/src/lib/toast-theme";
 
 const WEB_TOAST_CSS = `
-  [data-sonner-toaster][dir="rtl"] [data-sonner-toast] {
+  [data-sonner-toaster][dir="rtl"] {
+    direction: rtl !important;
+  }
+  [data-sonner-toaster][dir="rtl"] [data-sonner-toast],
+  .mokeb-toast {
     direction: rtl !important;
     text-align: right !important;
     width: 100% !important;
   }
-  [data-sonner-toaster][dir="rtl"] [data-title] {
+  [data-sonner-toaster][dir="rtl"] [data-content] {
+    direction: rtl !important;
+    text-align: right !important;
+    align-items: flex-end !important;
+    width: 100% !important;
+  }
+  [data-sonner-toaster][dir="rtl"] [data-title],
+  .mokeb-toast-title {
     direction: rtl !important;
     text-align: right !important;
     width: 100% !important;
     font-family: Vazir-Medium, Vazir, Tahoma, sans-serif !important;
   }
-  [data-sonner-toaster][dir="rtl"] [data-description] {
+  [data-sonner-toaster][dir="rtl"] [data-description],
+  .mokeb-toast-description {
     direction: rtl !important;
     text-align: right !important;
     width: 100% !important;
     font-family: Vazir, Tahoma, sans-serif !important;
+  }
+  [data-sonner-toaster][dir="rtl"] [data-icon] {
+    margin-left: 12px !important;
+    margin-right: 0 !important;
   }
 `;
 

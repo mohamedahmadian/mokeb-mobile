@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Text } from "@/src/lib/fonts";
+import { Text, fontFamilies } from "@/src/lib/fonts";
 import { colors, radius, spacing } from "@/src/lib/theme";
 
 export type AppToastVariant = "success" | "error" | "warning" | "info";
@@ -72,6 +72,7 @@ export function AppToast({ title, message, variant, onClose }: AppToastProps) {
           },
         ]}
       >
+        {/* LTR engine: close left, text center, icon right */}
         {onClose ? (
           <Pressable
             onPress={onClose}
@@ -102,10 +103,10 @@ export function AppToast({ title, message, variant, onClose }: AppToastProps) {
   );
 }
 
-const rtlTextBase = {
+const rtlText = {
   textAlign: "right" as const,
   writingDirection: "rtl" as const,
-  width: "100%" as const,
+  alignSelf: "stretch" as const,
 };
 
 const styles = StyleSheet.create({
@@ -161,15 +162,15 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   title: {
-    ...rtlTextBase,
-    fontFamily: "Vazir-Medium",
+    ...rtlText,
+    fontFamily: fontFamilies.medium,
     fontSize: 15,
     lineHeight: 22,
     color: colors.text,
   },
   message: {
-    ...rtlTextBase,
-    fontFamily: "Vazir",
+    ...rtlText,
+    fontFamily: fontFamilies.regular,
     fontSize: 13,
     lineHeight: 20,
     color: colors.textMuted,

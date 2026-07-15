@@ -33,6 +33,90 @@ export function formatPersianDate(isoDate: string) {
   );
 }
 
+const PERSIAN_MONTHS = [
+  "فروردین",
+  "اردیبهشت",
+  "خرداد",
+  "تیر",
+  "مرداد",
+  "شهریور",
+  "مهر",
+  "آبان",
+  "آذر",
+  "دی",
+  "بهمن",
+  "اسفند",
+] as const;
+
+export function persianMonthNames() {
+  return PERSIAN_MONTHS;
+}
+
+export function formatPersianDateParts(value: string): {
+  jy: number;
+  jm: number;
+  jd: number;
+} | null {
+  const normalized = toLatinDigits(value.trim()).replace(/-/g, "/");
+  const match = normalized.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!match) return null;
+  const jy = Number(match[1]);
+  const jm = Number(match[2]);
+  const jd = Number(match[3]);
+  if (!isValidJalaaliDate(jy, jm, jd)) return null;
+  return { jy, jm, jd };
+}
+
+export function buildPersianDate(jy: number, jm: number, jd: number): string | null {
+  if (!isValidJalaaliDate(jy, jm, jd)) return null;
+  return toPersianDigits(
+    `${jy}/${String(jm).padStart(2, "0")}/${String(jd).padStart(2, "0")}`,
+  );
+}
+
+const PERSIAN_WEEKDAYS = [
+  "یکشنبه",
+  "دوشنبه",
+  "سه‌شنبه",
+  "چهارشنبه",
+  "پنج‌شنبه",
+  "جمعه",
+  "شنبه",
+];
+
+export function persianWeekdayLabel(isoDate: string) {
+  const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  return PERSIAN_WEEKDAYS[date.getDay()] ?? "";
+}
+
+export function persianDayNumber(isoDate: string) {
+  const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const { jd } = toJalaali(
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  );
+  return toPersianDigits(String(jd));
+}
+
+export function persianMonthLabel(isoDate: string) {
+  const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const { jm } = toJalaali(
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  );
+  return PERSIAN_MONTHS[jm - 1] ?? "";
+}
+
 export function parsePersianDate(value: string) {
   const normalized = toLatinDigits(value.trim()).replace(/-/g, "/");
   const match = normalized.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
@@ -55,7 +139,19 @@ export function formatPersianDateRange(startDate: string, endDate: string) {
 }
 
 export function formatPersianNumber(value: number) {
-  return value.toLocaleString("fa-IR");
+  const n = Number(value);
+  if (!Number.isFinite(n)) return toPersianDigits("0");
+  return toPersianDigits(String(Math.trunc(n)));
+}
+
+export function toPersianDateDisplay(value?: string | null): string {
+  if (!value?.trim()) return "";
+  const trimmed = value.trim();
+  if (formatPersianDateParts(trimmed)) return trimmed;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return formatPersianDate(trimmed);
+  }
+  return trimmed;
 }
 
 export function addDaysToPersianDate(value: string, days: number) {

@@ -9,6 +9,8 @@ const rtlTitle: TextStyle = {
   fontSize: 15,
   lineHeight: 22,
   width: "100%",
+  textAlign: "right",
+  writingDirection: "rtl",
 };
 
 const rtlDescription: TextStyle = {
@@ -17,10 +19,11 @@ const rtlDescription: TextStyle = {
   fontSize: 13,
   lineHeight: 20,
   width: "100%",
+  textAlign: "right",
+  writingDirection: "rtl",
 };
 
 const toastShell: ViewStyle = {
-  direction: "rtl",
   borderRadius: radius.lg,
   borderCurve: "continuous",
   marginHorizontal: 16,
@@ -33,7 +36,11 @@ const toastShell: ViewStyle = {
   elevation: 6,
 };
 
-function variantAccent(accent: string, background: string, border: string): ViewStyle {
+function variantAccent(
+  accent: string,
+  background: string,
+  border: string,
+): ViewStyle {
   return {
     ...toastShell,
     backgroundColor: background,
@@ -47,10 +54,10 @@ function variantAccent(accent: string, background: string, border: string): View
 export const nativeToastOptions = {
   toastContainerStyle: {
     width: "100%",
-    direction: "rtl",
+    alignSelf: "stretch",
   } satisfies ViewStyle,
   toastContentStyle: {
-    flexDirection: "row-reverse",
+    flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
   } satisfies ViewStyle,
@@ -72,7 +79,6 @@ export const nativeToastOptions = {
 
 export const webToastOptions = {
   style: {
-    direction: "rtl",
     borderRadius: `${radius.lg}px`,
     padding: "14px 16px",
     fontFamily: fontFamilies.regular,
@@ -81,6 +87,7 @@ export const webToastOptions = {
     borderRight: `4px solid ${colors.primary}`,
     textAlign: "right",
     width: "100%",
+    direction: "rtl",
   } as CSSProperties,
   classNames: {
     toast: "mokeb-toast",

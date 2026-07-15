@@ -1,4 +1,9 @@
-export type RoleName = "Admin" | "Pilgrim" | "MawkibOwner" | "HonoraryServant";
+export type RoleName =
+  | "Admin"
+  | "Pilgrim"
+  | "MawkibOwner"
+  | "MawkibServant"
+  | "HonoraryServant";
 
 export type UserGender = "Male" | "Female";
 
@@ -52,6 +57,8 @@ export interface User {
   isActive: boolean;
   createdAt: string;
   roles: RoleName[];
+  /** شناسه موکب‌دار برای دسترسی به داده؛ برای موکب‌دار برابر id خودش است */
+  ownerUserId: number;
 }
 
 export type UserProfileInput = Partial<
@@ -82,6 +89,8 @@ export type UserProfileInput = Partial<
 export interface Mawkib {
   id: number;
   name: string;
+  /** نوع مکان: خانه، حسینیه، مسجد، ورزشگاه و غیره */
+  mawkibType?: string | null;
   address: string;
   neshanAddressUrl?: string | null;
   latitude?: number | null;
@@ -197,6 +206,8 @@ export interface ReservationDeliveredItem {
 }
 
 export interface PilgrimListFilters {
+  /** OR search across name, mobile, and national ID */
+  query?: string;
   fullName?: string;
   mobileNumber?: string;
   nationalId?: string;

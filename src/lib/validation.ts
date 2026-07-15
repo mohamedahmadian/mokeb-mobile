@@ -1,7 +1,7 @@
 const PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 
-function toLatinDigits(value: string): string {
+export function toLatinDigits(value: string): string {
   return value.replace(/[۰-۹٠-٩]/g, (ch) => {
     const persianIndex = PERSIAN_DIGITS.indexOf(ch);
     if (persianIndex >= 0) return String(persianIndex);

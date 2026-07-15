@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { RefreshControl, StyleSheet, View } from "react-native";
 import { Text } from "@/src/lib/fonts";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
 import { AttendanceReservationCard } from "@/src/components/AttendanceReservationCard";
@@ -10,11 +15,14 @@ import {
   ListCard,
   PrimaryButton,
   ScreenContainer,
+  ScreenScroll,
   SearchBar,
   SearchBarStickyWrap,
 } from "@/src/components/ui";
+import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
+import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { exportAttendanceToExcel } from "@/src/lib/attendance-export";
 import { presenceStateLabel } from "@/src/lib/labels";
 import { notify } from "@/src/lib/notify";
@@ -31,7 +39,7 @@ import type { Reservation, ReservationEventType } from "@/src/types";
 type AttendanceView = "menu" | "search" | "present" | "absent";
 
 export default function AttendanceScreen() {
-  const { user } = useAuth();
+  const { user, ownerId } = useAuth();
   const queryClient = useQueryClient();
   const { attendanceQuery, attendanceRequestId, attendanceView } =
     useLocalSearchParams<{
@@ -50,7 +58,10 @@ export default function AttendanceScreen() {
   } | null>(null);
 
   useEffect(() => {
-    if (!attendanceRequestId || handledRequestId.current === attendanceRequestId) {
+    if (
+      !attendanceRequestId ||
+      handledRequestId.current === attendanceRequestId
+    ) {
       return;
     }
 
@@ -73,31 +84,44 @@ export default function AttendanceScreen() {
   }, [attendanceQuery, attendanceRequestId, attendanceView]);
 
   const lookupQuery = useQuery({
-    queryKey: ["attendance-lookup", user?.id, debouncedQuery],
-    enabled:
-      activeView === "search" && !!user && debouncedQuery.length > 0,
+    queryKey: ["attendance-lookup", ownerId, debouncedQuery],
+    enabled: activeView === "search" && !!ownerId && debouncedQuery.length > 0,
     placeholderData: keepPreviousData,
-    queryFn: () => lookupReservation(user!.id, debouncedQuery),
+    queryFn: () => lookupReservation(ownerId!, debouncedQuery),
   });
 
   const presentQuery = useQuery({
-    queryKey: ["attendance-present", user?.id, debouncedQuery],
-    enabled: activeView === "present" && !!user,
+    queryKey: ["attendance-present", ownerId, debouncedQuery],
+    enabled: activeView === "present" && !!ownerId,
     placeholderData: keepPreviousData,
     queryFn: () =>
-      listPresentReservations(user!.id, {
+      listPresentReservations(ownerId!, {
         query: debouncedQuery || undefined,
       }),
   });
 
   const absentQuery = useQuery({
-    queryKey: ["attendance-absent", user?.id, debouncedQuery],
-    enabled: activeView === "absent" && !!user,
+    queryKey: ["attendance-absent", ownerId, debouncedQuery],
+    enabled: activeView === "absent" && !!ownerId,
     placeholderData: keepPreviousData,
     queryFn: () =>
-      listAbsentReservations(user!.id, {
+      listAbsentReservations(ownerId!, {
         query: debouncedQuery || undefined,
       }),
+  });
+
+  const { refreshing, onRefresh } = usePullToRefresh(async () => {
+    if (activeView === "search") {
+      await lookupQuery.refetch();
+      return;
+    }
+    if (activeView === "present") {
+      await presentQuery.refetch();
+      return;
+    }
+    if (activeView === "absent") {
+      await absentQuery.refetch();
+    }
   });
 
   const attendanceMutation = useMutation({
@@ -109,18 +133,18 @@ export default function AttendanceScreen() {
       eventType: ReservationEventType;
     }) => {
       setActiveAction({ reservationId, eventType });
-      return recordAttendanceEvent(user!.id, reservationId, eventType);
+      return recordAttendanceEvent(ownerId!, reservationId, eventType);
     },
     onSuccess: (updated, variables) => {
       queryClient.setQueryData<Reservation[]>(
-        ["attendance-lookup", user?.id, debouncedQuery],
+        ["attendance-lookup", ownerId, debouncedQuery],
         (current) =>
           (current ?? []).map((item) =>
             item.id === updated.id ? updated : item,
           ),
       );
       queryClient.invalidateQueries({
-        queryKey: ["attendance-events", user?.id, variables.reservationId],
+        queryKey: ["attendance-events", ownerId, variables.reservationId],
       });
       queryClient.invalidateQueries({ queryKey: ["reservations"] });
       queryClient.invalidateQueries({ queryKey: ["attendance-present"] });
@@ -190,14 +214,24 @@ export default function AttendanceScreen() {
           activeView === "menu" ? "مدیریت حضور و غیاب زائرین" : undefined
         }
         onBack={activeView !== "menu" ? closeView : undefined}
+        showLogo
       />
 
-      <ScrollView
-        style={styles.scroll}
+      <ScreenScroll
         contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="always"
         keyboardDismissMode="on-drag"
         stickyHeaderIndices={activeView !== "menu" ? [0] : undefined}
+        refreshControl={
+          activeView !== "menu" ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+              progressBackgroundColor={colors.surface}
+            />
+          ) : undefined
+        }
       >
         {activeView === "menu" ? (
           <View style={styles.menu}>
@@ -227,9 +261,11 @@ export default function AttendanceScreen() {
               onChangeText={setQuery}
               placeholder={
                 activeView === "search"
-                  ? "کد رزرو، موبایل یا کد ملی"
-                  : "نام، موبایل، کد ملی یا شناسه رزرو"
+                  ? "نام خانوادگی، کد رزرو، موبایل یا کد ملی"
+                  : "نام خانوادگی، موبایل، کد ملی یا شناسه رزرو"
               }
+              autoFocus={activeView === "search"}
+              flushRight
             />
           </SearchBarStickyWrap>
         )}
@@ -240,7 +276,7 @@ export default function AttendanceScreen() {
               <EmptyState
                 icon="search-outline"
                 title="جستجوی زائر"
-                description="کد رزرو، شماره موبایل یا کد ملی زائر را وارد کنید."
+                description="نام و نام خانوادگی، کد رزرو، شماره موبایل یا کد ملی زائر را وارد کنید."
               />
             ) : null}
 
@@ -304,9 +340,7 @@ export default function AttendanceScreen() {
                       : "زائر غائبی وجود ندارد"
                 }
                 description={
-                  query.trim()
-                    ? "عبارت جستجو را تغییر دهید."
-                    : undefined
+                  query.trim() ? "عبارت جستجو را تغییر دهید." : undefined
                 }
               />
             ) : null}
@@ -360,19 +394,15 @@ export default function AttendanceScreen() {
             })}
           </>
         ) : null}
-      </ScrollView>
+      </ScreenScroll>
+      <NewReservationFab />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    direction: "rtl",
-  },
   content: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -380,7 +410,6 @@ const styles = StyleSheet.create({
   },
   menu: {
     width: "100%",
-    direction: "rtl",
     gap: spacing.md,
     marginTop: spacing.md,
   },

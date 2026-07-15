@@ -9,6 +9,15 @@ import {
 } from "react";
 import { getDatabase } from "@/src/db/client";
 import {
+  canAccessManagement,
+  canAccessReports,
+  canCancelReservation,
+  canDeleteData,
+  canManageServants,
+  isMawkibOwner,
+  isMawkibServant,
+} from "@/src/lib/permissions";
+import {
   getCurrentSessionUser,
   login as loginService,
   logout as logoutService,
@@ -20,6 +29,15 @@ import type { User, UserProfileInput } from "@/src/types";
 
 type AuthContextValue = {
   user: User | null;
+  /** شناسه موکب‌دار برای همهٔ کوئری‌های داده */
+  ownerId: number | undefined;
+  isOwner: boolean;
+  isServant: boolean;
+  canDelete: boolean;
+  canManage: boolean;
+  canViewReports: boolean;
+  canCancel: boolean;
+  canManageStaff: boolean;
   isLoading: boolean;
   isReady: boolean;
   login: (mobileNumber: string, password: string) => Promise<void>;
@@ -115,6 +133,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       user,
+      ownerId: user?.ownerUserId,
+      isOwner: isMawkibOwner(user),
+      isServant: isMawkibServant(user),
+      canDelete: canDeleteData(user),
+      canManage: canAccessManagement(user),
+      canViewReports: canAccessReports(user),
+      canCancel: canCancelReservation(user),
+      canManageStaff: canManageServants(user),
       isLoading,
       isReady,
       login,

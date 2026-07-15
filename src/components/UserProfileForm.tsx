@@ -2,10 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { File, Paths } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { Image, Pressable, StyleSheet, View } from "react-native";
+import { PersianDateField } from "@/src/components/PersianDateField";
 import { AppInput } from "@/src/components/ui";
 import { LocationFields } from "@/src/components/LocationFields";
 import { Text } from "@/src/lib/fonts";
 import { notify } from "@/src/lib/notify";
+import { toPersianDateDisplay } from "@/src/lib/persianDate";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
 import type { User, UserGender, UserProfileInput } from "@/src/types";
 
@@ -39,7 +41,7 @@ export function createUserFormData(user?: User | null): UserFormData {
     nationalIdCardImageUrl: user?.nationalIdCardImageUrl ?? "",
     imageUrl: user?.imageUrl ?? "",
     gender: user?.gender ?? "",
-    birthDate: user?.birthDate ?? "",
+    birthDate: toPersianDateDisplay(user?.birthDate),
     country: user?.country ?? "ایران",
     passportNumber: user?.passportNumber ?? "",
     province: user?.province ?? "",
@@ -242,11 +244,11 @@ export function UserProfileForm({ value, onChange }: UserProfileFormProps) {
         </View>
       </View>
 
-      <AppInput
+      <PersianDateField
         label="تاریخ تولد"
         value={value.birthDate}
-        onChangeText={(text) => setField("birthDate", text)}
-        placeholder="مثال: ۱۳۷۰/۰۱/۰۱"
+        onChange={(text) => setField("birthDate", text)}
+        placeholder="انتخاب تاریخ تولد"
       />
       <AppInput
         label="کشور"
@@ -328,12 +330,10 @@ export function UserProfileForm({ value, onChange }: UserProfileFormProps) {
 const styles = StyleSheet.create({
   form: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
   },
   field: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
     marginBottom: spacing.md,
   },
@@ -347,11 +347,10 @@ const styles = StyleSheet.create({
   },
   labelRow: {
     width: "100%",
-    alignItems: "flex-start",
+    alignItems: "flex-end",
   },
   genderRow: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     gap: spacing.sm,
   },
   genderButton: {
@@ -371,6 +370,7 @@ const styles = StyleSheet.create({
   genderText: {
     ...typography.body,
     color: colors.textMuted,
+    textAlign: "center",
   },
   genderTextSelected: {
     color: colors.primaryDark,
@@ -406,15 +406,14 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   imageActions: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
   imageActionButton: {
     flex: 1,
     minHeight: 42,
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,
@@ -429,10 +428,11 @@ const styles = StyleSheet.create({
   imageActionText: {
     ...typography.caption,
     color: colors.primaryDark,
+    textAlign: "center",
   },
   removeImageButton: {
     alignSelf: "flex-end",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     gap: spacing.xs,
     paddingVertical: spacing.sm,

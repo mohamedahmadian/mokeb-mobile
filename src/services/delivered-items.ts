@@ -99,6 +99,17 @@ export async function listDeliveredItemsByReservation(
   return rows.map(mapDeliveredItem);
 }
 
+export async function listPendingDeliveredItemsByReservation(
+  ownerUserId: number,
+  reservationId: number,
+): Promise<ReservationDeliveredItem[]> {
+  const items = await listDeliveredItemsByReservation(
+    ownerUserId,
+    reservationId,
+  );
+  return items.filter((item) => item.status === "DeliveredToGuest");
+}
+
 export async function createDeliveredItem(
   ownerUserId: number,
   input: {

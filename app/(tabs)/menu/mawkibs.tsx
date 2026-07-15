@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { RefreshControl, StyleSheet, View } from "react-native";
 import { Text } from "@/src/lib/fonts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
 import {
   createMawkibFormData,
@@ -11,17 +11,18 @@ import {
 } from "@/src/components/MawkibProfileForm";
 import {
   EmptyState,
-  FloatingActionButton,
   ListCard,
   PrimaryButton,
   ScreenContainer,
+  ScreenScroll,
   SearchBar,
   StickyBottomAction,
 } from "@/src/components/ui";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { notify } from "@/src/lib/notify";
 import { mawkibCityLabel, mawkibStatusLabel } from "@/src/lib/labels";
-import { colors, spacing } from "@/src/lib/theme";
+import { colors, radius, spacing } from "@/src/lib/theme";
 import {
   createMawkib,
   deleteMawkib,
@@ -31,18 +32,31 @@ import {
 import type { Mawkib } from "@/src/types";
 
 export default function MawkibsScreen() {
-  const { user } = useAuth();
+  const { user, ownerId, canDelete } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { mawkibAction, mawkibRequestId } = useLocalSearchParams<{
+    mawkibAction?: string;
+    mawkibRequestId?: string;
+  }>();
+  const handledRequestId = useRef<string | undefined>(undefined);
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingMawkibId, setEditingMawkibId] = useState<number | null>(null);
   const [form, setForm] = useState(createMawkibFormData());
 
-  const { data: mawkibs = [], isLoading } = useQuery({
-    queryKey: ["mawkibs", user?.id, query],
-    enabled: !!user,
-    queryFn: () => listMawkibs(user!.id, { query: query || undefined }),
+  const {
+    data: mawkibs = [],
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["mawkibs", ownerId, query],
+    enabled: !!ownerId,
+    queryFn: () => listMawkibs(ownerId!, { query: query || undefined }),
+  });
+
+  const { refreshing, onRefresh } = usePullToRefresh(async () => {
+    await refetch();
   });
 
   const resetForm = () => {
@@ -54,6 +68,16 @@ export default function MawkibsScreen() {
     resetForm();
     setShowForm(true);
   };
+
+  useEffect(() => {
+    if (!mawkibRequestId || handledRequestId.current === mawkibRequestId) {
+      return;
+    }
+    handledRequestId.current = mawkibRequestId;
+    if (mawkibAction === "new") {
+      openNewMawkib();
+    }
+  }, [mawkibAction, mawkibRequestId]);
 
   const openEditMawkib = (mawkib: Mawkib) => {
     setEditingMawkibId(mawkib.id);
@@ -70,8 +94,8 @@ export default function MawkibsScreen() {
     mutationFn: () => {
       const input = mawkibFormToInput(form);
       return editingMawkibId
-        ? updateMawkib(user!.id, editingMawkibId, input)
-        : createMawkib(user!.id, input);
+        ? updateMawkib(ownerId!, editingMawkibId, input)
+        : createMawkib(ownerId!, input);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mawkibs"] });
@@ -85,7 +109,7 @@ export default function MawkibsScreen() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteMawkib(user!.id, id),
+    mutationFn: (id: number) => deleteMawkib(ownerId!, id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mawkibs"] });
       notify("موفق", "موکب حذف شد");
@@ -97,35 +121,42 @@ export default function MawkibsScreen() {
     <ScreenContainer>
       <AppHeader
         title={
-          showForm
-            ? editingMawkibId
-              ? "ویرایش موکب"
-              : "موکب جدید"
-            : "موکب‌ها"
+          showForm ? (editingMawkibId ? "ویرایش موکب" : "موکب جدید") : "موکب‌ها"
         }
         subtitle={showForm ? undefined : "مدیریت موکب‌های شما"}
-        onBack={showForm ? closeForm : () => router.back()}
+        onBack={showForm ? closeForm : undefined}
+        showLogo={!showForm}
       />
       {!showForm ? (
-        <SearchBar
-          value={query}
-          onChangeText={setQuery}
-          placeholder="نام، آدرس یا تلفن"
-        />
+        <View style={styles.listHeader}>
+          <SearchBar
+            value={query}
+            onChangeText={setQuery}
+            placeholder="نام، نوع، آدرس یا تلفن"
+          />
+        </View>
       ) : null}
 
-      <ScrollView
-        style={styles.scroll}
+      <ScreenScroll
         contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={
+          !showForm ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+              progressBackgroundColor={colors.surface}
+            />
+          ) : undefined
+        }
       >
         {showForm ? (
           <View style={styles.form}>
             <MawkibProfileForm value={form} onChange={setForm} />
           </View>
         ) : null}
-
         {!showForm && isLoading ? (
           <Text style={styles.loading}>در حال بارگذاری...</Text>
         ) : !showForm && mawkibs.length === 0 ? (
@@ -142,6 +173,15 @@ export default function MawkibsScreen() {
                 titleIcon="home-outline"
                 badge={mawkibStatusLabel[mawkib.status]}
                 details={[
+                  ...(mawkib.mawkibType
+                    ? [
+                        {
+                          icon: "business-outline" as const,
+                          label: "نوع",
+                          value: mawkib.mawkibType,
+                        },
+                      ]
+                    : []),
                   {
                     icon: "location-outline",
                     label: "آدرس",
@@ -193,50 +233,72 @@ export default function MawkibsScreen() {
                         })
                       }
                     />
-                    <PrimaryButton
-                      label="حذف"
-                      icon="trash-outline"
-                      variant="danger"
-                      style={styles.itemAction}
-                      labelStyle={styles.itemActionLabel}
-                      onPress={() =>
-                        notify("حذف موکب", `آیا از حذف «${mawkib.name}» مطمئن هستید؟`, [
-                          { text: "انصراف", style: "cancel" },
-                          {
-                            text: "حذف",
-                            style: "destructive",
-                            onPress: () => deleteMutation.mutate(mawkib.id),
-                          },
-                        ])
-                      }
-                    />
+                    {canDelete ? (
+                      <PrimaryButton
+                        label="حذف"
+                        icon="trash-outline"
+                        variant="danger"
+                        style={styles.itemAction}
+                        labelStyle={styles.itemActionLabel}
+                        onPress={() =>
+                          notify(
+                            "حذف موکب",
+                            `آیا از حذف «${mawkib.name}» مطمئن هستید؟`,
+                            [
+                              { text: "انصراف", style: "cancel" },
+                              {
+                                text: "حذف",
+                                style: "destructive",
+                                onPress: () => deleteMutation.mutate(mawkib.id),
+                              },
+                            ],
+                          )
+                        }
+                      />
+                    ) : null}
                   </View>
                 }
               />
             </View>
           ))
         ) : null}
-      </ScrollView>
+      </ScreenScroll>
 
       {showForm ? (
         <StickyBottomAction>
-          <PrimaryButton
-            label={editingMawkibId ? "ذخیره تغییرات" : "ثبت موکب"}
-            icon={editingMawkibId ? "save-outline" : "checkmark"}
-            loading={saveMutation.isPending}
-            compact
-            onPress={() => saveMutation.mutate()}
-          />
+          <View style={styles.bottomActionCenter}>
+            <PrimaryButton
+              label={editingMawkibId ? "ذخیره تغییرات" : "ثبت موکب"}
+              icon={editingMawkibId ? "save-outline" : "checkmark"}
+              loading={saveMutation.isPending}
+              compact
+              style={styles.bottomActionButton}
+              onPress={() => saveMutation.mutate()}
+            />
+          </View>
         </StickyBottomAction>
       ) : (
-        <FloatingActionButton label="موکب جدید" onPress={openNewMawkib} />
+        <StickyBottomAction>
+          <View style={styles.bottomActionCenter}>
+            <PrimaryButton
+              label="افزودن"
+              icon="add-circle-outline"
+              compact
+              style={styles.bottomActionButton}
+              onPress={openNewMawkib}
+            />
+          </View>
+        </StickyBottomAction>
       )}
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1 },
+  listHeader: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
   content: {
     paddingHorizontal: spacing.lg,
     paddingBottom: 120,
@@ -253,8 +315,7 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   itemActions: {
-    direction: "ltr",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     gap: spacing.sm,
   },
   itemAction: {
@@ -265,6 +326,17 @@ const styles = StyleSheet.create({
   },
   itemActionLabel: {
     fontSize: 11,
+  },
+  bottomActionCenter: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottomActionButton: {
+    alignSelf: "center",
+    minWidth: 200,
+    borderRadius: radius.full,
+    overflow: "hidden",
   },
   loading: {
     textAlign: "center",

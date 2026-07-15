@@ -183,7 +183,6 @@ export function LocationFields({
 const styles = StyleSheet.create({
   field: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
     marginBottom: spacing.md,
   },
@@ -198,20 +197,17 @@ const styles = StyleSheet.create({
   },
   labelRow: {
     width: "100%",
-    direction: "rtl",
     alignItems: "flex-end",
   },
   select: {
-    direction: "rtl",
     minHeight: 46,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
-    justifyContent: "flex-start",
     gap: spacing.sm,
   },
   selectDisabled: {
@@ -235,14 +231,11 @@ const styles = StyleSheet.create({
   },
   modal: {
     flex: 1,
-    direction: "rtl",
     backgroundColor: colors.background,
   },
   modalHeader: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
-    justifyContent: "flex-start",
     padding: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -264,10 +257,8 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
   },
   search: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
-    justifyContent: "flex-start",
     margin: spacing.lg,
     paddingHorizontal: spacing.md,
     borderWidth: 1,
@@ -284,16 +275,13 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
   },
   options: {
-    direction: "rtl",
     alignItems: "stretch",
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
   },
   option: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
-    justifyContent: "flex-start",
     minHeight: 48,
     paddingHorizontal: spacing.md,
     borderBottomWidth: 1,

@@ -1,18 +1,13 @@
 import bcrypt from "@/src/lib/bcrypt";
 import * as SecureStore from "expo-secure-store";
-import {
-  boolFromDb,
-  boolToDb,
-  generateTrackingCode,
-  getDatabase,
-} from "@/src/db/client";
+import { boolFromDb, getDatabase } from "@/src/db/client";
 import {
   formatMobileForLookup,
   getFullNameValidationError,
   getMobileValidationError,
   getNationalIdValidationError,
   getPasswordValidationError,
-  normalizeMobileDigits,
+  toLatinDigits,
 } from "@/src/lib/validation";
 import type { RoleName, User, UserProfileInput } from "@/src/types";
 
@@ -55,7 +50,23 @@ async function getUserRoles(userId: number): Promise<RoleName[]> {
   return rows.map((row) => row.name);
 }
 
-function mapUser(row: UserRow, roles: RoleName[]): User {
+async function resolveOwnerUserId(
+  userId: number,
+  roles: RoleName[],
+): Promise<number | null> {
+  if (roles.includes("MawkibOwner")) return userId;
+  if (roles.includes("MawkibServant")) {
+    const db = await getDatabase();
+    const link = await db.getFirstAsync<{ ownerUserId: number }>(
+      "SELECT ownerUserId FROM mawkib_servants WHERE servantUserId = ?",
+      [userId],
+    );
+    return link?.ownerUserId ?? null;
+  }
+  return null;
+}
+
+function mapUser(row: UserRow, roles: RoleName[], ownerUserId: number): User {
   return {
     id: row.id,
     fullName: row.fullName,
@@ -80,6 +91,7 @@ function mapUser(row: UserRow, roles: RoleName[]): User {
     isActive: boolFromDb(row.isActive),
     createdAt: row.createdAt,
     roles,
+    ownerUserId,
   };
 }
 
@@ -110,7 +122,9 @@ export async function getUserById(id: number): Promise<User | null> {
   );
   if (!row || !boolFromDb(row.isActive)) return null;
   const roles = await getUserRoles(row.id);
-  return mapUser(row, roles);
+  const ownerUserId = await resolveOwnerUserId(row.id, roles);
+  if (ownerUserId == null) return null;
+  return mapUser(row, roles, ownerUserId);
 }
 
 export async function registerMawkibOwner(input: {
@@ -134,7 +148,7 @@ export async function registerMawkibOwner(input: {
   if (existing) throw new Error("این شماره موبایل قبلاً ثبت شده است");
 
   const db = await getDatabase();
-  const passwordHash = await bcrypt.hash(input.password, 10);
+  const passwordHash = await bcrypt.hash(toLatinDigits(input.password), 10);
 
   const result = await db.runAsync(
     `INSERT INTO users (fullName, mobileNumber, passwordHash, province, city)
@@ -164,24 +178,34 @@ export async function login(input: {
   mobileNumber: string;
   password: string;
 }): Promise<User> {
-  const mobileError = getMobileValidationError(input.mobileNumber);
-  if (mobileError) throw new Error(mobileError);
-  if (!input.password) throw new Error("رمز عبور را وارد کنید");
+  const mobileNumber = toLatinDigits(input.mobileNumber);
+  const password = toLatinDigits(input.password);
 
-  const row = await findUserRowByMobile(input.mobileNumber);
+  const mobileError = getMobileValidationError(mobileNumber);
+  if (mobileError) throw new Error(mobileError);
+  if (!password) throw new Error("رمز عبور را وارد کنید");
+
+  const row = await findUserRowByMobile(mobileNumber);
   if (!row || !boolFromDb(row.isActive)) {
     throw new Error("شماره موبایل یا رمز عبور اشتباه است");
   }
 
-  const valid = await bcrypt.compare(input.password, row.passwordHash);
+  const valid = await bcrypt.compare(password, row.passwordHash);
   if (!valid) throw new Error("شماره موبایل یا رمز عبور اشتباه است");
 
   const roles = await getUserRoles(row.id);
-  if (!roles.includes("MawkibOwner")) {
-    throw new Error("فقط موکب‌داران می‌توانند وارد شوند");
+  const canLogin =
+    roles.includes("MawkibOwner") || roles.includes("MawkibServant");
+  if (!canLogin) {
+    throw new Error("فقط موکب‌داران و خادمین می‌توانند وارد شوند");
   }
 
-  const user = mapUser(row, roles);
+  const ownerUserId = await resolveOwnerUserId(row.id, roles);
+  if (ownerUserId == null) {
+    throw new Error("حساب خادم به موکب‌داری متصل نیست");
+  }
+
+  const user = mapUser(row, roles, ownerUserId);
   await SecureStore.setItemAsync(SESSION_KEY, String(user.id));
   return user;
 }
@@ -215,10 +239,11 @@ export async function changePassword(input: {
   ]);
 }
 
-export async function updateProfile(
+/** به‌روزرسانی فیلدهای پروفایل در جدول users (بدون وابستگی به نقش ورود) */
+export async function applyUserProfileUpdate(
   userId: number,
   input: UserProfileInput,
-): Promise<User> {
+): Promise<void> {
   const fullNameError = getFullNameValidationError(input.fullName ?? "");
   if (input.fullName !== undefined && fullNameError) {
     throw new Error(fullNameError);
@@ -233,6 +258,12 @@ export async function updateProfile(
   }
 
   const db = await getDatabase();
+  const exists = await db.getFirstAsync<{ id: number }>(
+    "SELECT id FROM users WHERE id = ?",
+    [userId],
+  );
+  if (!exists) throw new Error("کاربر یافت نشد");
+
   if (input.mobileNumber !== undefined) {
     const normalizedMobile = formatMobileForLookup(input.mobileNumber);
     const duplicate = await db.getFirstAsync<{ id: number }>(
@@ -276,14 +307,20 @@ export async function updateProfile(
   addText("eitaa", input.eitaa);
   addText("email", input.email);
 
-  if (updates.length > 0) {
-    values.push(userId);
-    await db.runAsync(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
-      values,
-    );
-  }
+  if (updates.length === 0) return;
 
+  values.push(userId);
+  await db.runAsync(
+    `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
+    values,
+  );
+}
+
+export async function updateProfile(
+  userId: number,
+  input: UserProfileInput,
+): Promise<User> {
+  await applyUserProfileUpdate(userId, input);
   const user = await getUserById(userId);
   if (!user) throw new Error("کاربر یافت نشد");
   return user;
@@ -296,5 +333,3 @@ export async function hasAnyMawkibOwner(): Promise<boolean> {
   );
   return (row?.count ?? 0) > 0;
 }
-
-export { generateTrackingCode, normalizeMobileDigits, boolToDb, boolFromDb };

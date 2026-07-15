@@ -1,6 +1,12 @@
 import bcrypt from "@/src/lib/bcrypt";
 import { boolFromDb, getDatabase } from "@/src/db/client";
-import { getUserById, updateProfile } from "@/src/services/auth";
+import { applyUserProfileUpdate } from "@/src/services/auth";
+import {
+  matchesFullName,
+  matchesMobile,
+  matchesNationalId,
+  matchesPersonOrReservationQuery,
+} from "@/src/lib/person-search";
 import {
   formatMobileForLookup,
   getFullNameValidationError,
@@ -64,6 +70,7 @@ function mapPilgrim(row: PilgrimRow): User {
     isActive: boolFromDb(row.isActive),
     createdAt: row.createdAt,
     roles: ["Pilgrim"],
+    ownerUserId: row.id,
   };
 }
 
@@ -91,18 +98,6 @@ export async function listPilgrims(
   ];
   const params: (string | number)[] = [ownerUserId];
 
-  if (filters.fullName) {
-    clauses.push("u.fullName LIKE ?");
-    params.push(`%${filters.fullName.trim()}%`);
-  }
-  if (filters.mobileNumber) {
-    clauses.push("u.mobileNumber LIKE ?");
-    params.push(`%${formatMobileForLookup(filters.mobileNumber)}%`);
-  }
-  if (filters.nationalId) {
-    clauses.push("u.nationalId LIKE ?");
-    params.push(`%${filters.nationalId.trim()}%`);
-  }
   if (filters.province) {
     clauses.push("u.province = ?");
     params.push(filters.province);
@@ -129,7 +124,69 @@ export async function listPilgrims(
     params,
   );
 
-  return rows.map(mapPilgrim);
+  let result = rows.map(mapPilgrim);
+
+  const textQuery =
+    filters.query?.trim() ||
+    filters.fullName?.trim() ||
+    filters.mobileNumber?.trim() ||
+    filters.nationalId?.trim() ||
+    "";
+
+  if (textQuery) {
+    result = result.filter((pilgrim) => {
+      if (filters.query?.trim()) {
+        return matchesPersonOrReservationQuery(filters.query, {
+          fullName: pilgrim.fullName,
+          mobile: pilgrim.mobileNumber,
+          nationalId: pilgrim.nationalId,
+        });
+      }
+      if (filters.fullName?.trim() && !matchesFullName(pilgrim.fullName, filters.fullName)) {
+        return false;
+      }
+      if (
+        filters.mobileNumber?.trim() &&
+        !matchesMobile(pilgrim.mobileNumber, filters.mobileNumber)
+      ) {
+        return false;
+      }
+      if (
+        filters.nationalId?.trim() &&
+        !matchesNationalId(pilgrim.nationalId, filters.nationalId)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  return result;
+}
+
+export async function countPilgrims(ownerUserId: number): Promise<number> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ count: number }>(
+    `SELECT COUNT(DISTINCT u.id) as count
+     FROM users u
+     WHERE EXISTS (
+       SELECT 1 FROM user_roles ur
+       INNER JOIN roles r ON r.id = ur.roleId
+       WHERE ur.userId = u.id AND r.name = 'Pilgrim'
+     )
+     AND (
+       EXISTS (
+         SELECT 1 FROM reservations res
+         INNER JOIN mawkibs m ON m.id = res.mawkibId
+         WHERE res.pilgrimUserId = u.id AND m.ownerUserId = ?
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM reservations res2 WHERE res2.pilgrimUserId = u.id
+       )
+     )`,
+    [ownerUserId],
+  );
+  return row?.count ?? 0;
 }
 
 export type PilgrimInput = UserProfileInput & {
@@ -192,7 +249,7 @@ export async function createPilgrim(input: PilgrimInput): Promise<User> {
     result.lastInsertRowId,
   ]);
 
-  const pilgrim = await getUserById(result.lastInsertRowId);
+  const pilgrim = await getPilgrimById(result.lastInsertRowId);
   if (!pilgrim) throw new Error("خطا در ثبت زائر");
   return pilgrim;
 }
@@ -214,7 +271,10 @@ export async function updatePilgrim(
     if (err) throw new Error(err);
   }
 
-  return updateProfile(id, input);
+  await applyUserProfileUpdate(id, input);
+  const pilgrim = await getPilgrimById(id);
+  if (!pilgrim) throw new Error("زائر یافت نشد");
+  return pilgrim;
 }
 
 export async function deletePilgrim(id: number): Promise<void> {

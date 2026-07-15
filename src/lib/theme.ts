@@ -1,3 +1,5 @@
+import { fontFamilies } from "@/src/lib/font-assets";
+
 export const colors = {
   background: "#f8fafc",
   surface: "#ffffff",
@@ -37,8 +39,6 @@ export const radius = {
   xl: 20,
   full: 999,
 } as const;
-
-import { fontFamilies } from "@/src/lib/fonts";
 
 export const rtlText = {
   textAlign: "right" as const,

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,6 +18,7 @@ import {
 } from "@/src/components/ui";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { notify } from "@/src/lib/notify";
+import { toLatinDigits } from "@/src/lib/validation";
 import { colors, spacing, typography } from "@/src/lib/theme";
 
 export default function LoginScreen() {
@@ -24,12 +27,28 @@ export default function LoginScreen() {
   const [mobileNumber, setMobileNumber] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardOpen(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const handleLogin = async () => {
     try {
       setLoading(true);
       await login(mobileNumber, password);
-      router.replace("/(tabs)/pilgrims");
+      router.replace("/(tabs)/dashboard");
     } catch (error) {
       notify(
         "خطا",
@@ -40,52 +59,85 @@ export default function LoginScreen() {
     }
   };
 
+  const loginButton = (
+    <PrimaryButton
+      label="ورود"
+      icon="log-in-outline"
+      loading={loading}
+      compact
+      onPress={handleLogin}
+    />
+  );
+
   return (
     <ScreenContainer>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.hero}>
-            <Text style={styles.title}>موکب‌یار</Text>
-            <Text style={styles.subtitle}>ورود موکب‌دار </Text>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.content,
+            keyboardOpen && styles.contentKeyboardOpen,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={[styles.hero, keyboardOpen && styles.heroCompact]}>
+            <Image
+              source={require("../../assets/images/logo.png")}
+              style={[styles.logo, keyboardOpen && styles.logoCompact]}
+              resizeMode="contain"
+              accessibilityLabel="لوگوی سامانه"
+            />
+            <Text style={[styles.title, keyboardOpen && styles.titleCompact]}>
+              سامانه جامع اسکان و خدمات زائر
+            </Text>
+            {!keyboardOpen ? (
+              <Text style={styles.subtitle}>ورود موکب‌دار</Text>
+            ) : null}
           </View>
 
           <View style={styles.card}>
             <AppInput
               label="شماره موبایل"
               value={mobileNumber}
-              onChangeText={setMobileNumber}
+              onChangeText={(value) => setMobileNumber(toLatinDigits(value))}
               keyboardType="phone-pad"
               autoCapitalize="none"
+              returnKeyType="next"
             />
             <AppInput
               label="رمز عبور"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(value) => setPassword(toLatinDigits(value))}
               secureTextEntry
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
             />
+            {keyboardOpen ? (
+              <View style={styles.inlineLogin}>{loginButton}</View>
+            ) : null}
           </View>
 
-          <PrimaryButton
-            label="ثبت‌نام موکب‌دار جدید"
-            variant="secondary"
-            icon="person-add-outline"
-            compact
-            onPress={() => router.push("/(auth)/register")}
-          />
+          {!keyboardOpen ? (
+            <PrimaryButton
+              label="ثبت‌نام موکب‌دار جدید"
+              variant="secondary"
+              icon="person-add-outline"
+              compact
+              onPress={() => router.push("/(auth)/register")}
+            />
+          ) : null}
         </ScrollView>
+
+        {!keyboardOpen ? (
+          <StickyBottomAction>{loginButton}</StickyBottomAction>
+        ) : null}
       </KeyboardAvoidingView>
-      <StickyBottomAction>
-        <PrimaryButton
-          label="ورود"
-          icon="log-in-outline"
-          loading={loading}
-          compact
-          onPress={handleLogin}
-        />
-      </StickyBottomAction>
     </ScreenContainer>
   );
 }
@@ -98,14 +150,39 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.lg,
   },
+  contentKeyboardOpen: {
+    justifyContent: "flex-start",
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: spacing.md,
+  },
   hero: {
     alignItems: "center",
+    gap: spacing.sm,
+  },
+  heroCompact: {
+    marginBottom: 0,
     gap: spacing.xs,
+  },
+  logo: {
+    width: 220,
+    height: 236,
+  },
+  logoCompact: {
+    width: 96,
+    height: 104,
   },
   title: {
     ...typography.title,
-    fontSize: 28,
+    fontSize: 18,
+    lineHeight: 28,
     color: colors.primaryDark,
+    textAlign: "center",
+    paddingHorizontal: spacing.sm,
+  },
+  titleCompact: {
+    fontSize: 14,
+    lineHeight: 22,
   },
   subtitle: {
     ...typography.body,
@@ -117,5 +194,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  inlineLogin: {
+    marginTop: spacing.sm,
   },
 });

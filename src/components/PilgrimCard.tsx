@@ -25,12 +25,6 @@ import {
 const CARD_TEAL = "#466766";
 const CARD_TEAL_LIGHT = "#eff5f4";
 
-const rtlText = {
-  textAlign: "right" as const,
-  writingDirection: "rtl" as const,
-  width: "100%" as const,
-};
-
 function CircleIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
   return (
     <View style={styles.circleIcon}>
@@ -45,15 +39,17 @@ function StatColumn({
   value,
   subValue,
   valueDir,
+  flex = 1,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   subValue?: string;
   valueDir?: "ltr" | "rtl";
+  flex?: number;
 }) {
   return (
-    <View style={styles.statColumn}>
+    <View style={[styles.statColumn, { flex }]}>
       <CircleIcon name={icon} />
       <Text style={styles.statLabel}>{label}</Text>
       <Text
@@ -83,13 +79,13 @@ function DetailRow({
   return (
     <View style={styles.detailRow}>
       <View style={styles.detailKey}>
-        <CircleIcon name={icon} />
         <Text style={styles.detailLabel}>{label}</Text>
+        <CircleIcon name={icon} />
       </View>
       <Text
         style={[
           styles.detailValue,
-          valueDir === "ltr" ? styles.ltrValueText : null,
+          valueDir === "ltr" ? styles.detailValueLtr : null,
         ]}
         numberOfLines={3}
       >
@@ -109,16 +105,16 @@ function CompanionValue({ male, female }: { male: number; female: number }) {
     <View style={styles.companionWrap}>
       {male > 0 ? (
         <View style={styles.companionPart}>
-          <Ionicons name="man-outline" size={12} color={CARD_TEAL} />
           <Text style={styles.companionText}>{formatPersianNumber(male)}</Text>
+          <Ionicons name="man-outline" size={12} color={CARD_TEAL} />
         </View>
       ) : null}
       {female > 0 ? (
         <View style={styles.companionPart}>
-          <Ionicons name="woman-outline" size={12} color={CARD_TEAL} />
           <Text style={styles.companionText}>
             {formatPersianNumber(female)}
           </Text>
+          <Ionicons name="woman-outline" size={12} color={CARD_TEAL} />
         </View>
       ) : null}
       {total > 0 ? (
@@ -150,9 +146,10 @@ export function PilgrimCard({ details, style }: PilgrimCardProps) {
     reservation.reservationEndDate,
   );
   const mawkibAddress = details.mawkibAddress?.trim() || "—";
+  const neshanAddress = details.neshanAddressUrl?.trim() || "—";
   const ownerName = details.ownerName?.trim() || "—";
   const ownerPhone = details.ownerPhone?.trim() || "—";
-  const locationQrUrl = hasValidCoords(
+  const locationGeoUrl = hasValidCoords(
     details.mawkibLatitude,
     details.mawkibLongitude,
   )
@@ -199,6 +196,30 @@ export function PilgrimCard({ details, style }: PilgrimCardProps) {
 
       <View style={styles.card}>
         <View style={styles.header}>
+          <View
+            style={[
+              styles.headerQr,
+              { backgroundColor: weekdayAccent.color },
+            ]}
+          >
+            <QRCode
+              value={cardUrl}
+              size={68}
+              color={weekdayAccent.textOnColor}
+              backgroundColor={weekdayAccent.color}
+            />
+            <Text
+              style={[styles.qrLabel, { color: weekdayAccent.textOnColor }]}
+            >
+              شناسه رزرو
+            </Text>
+            <Text
+              style={[styles.qrCode, { color: weekdayAccent.textOnColor }]}
+            >
+              {reservation.trackingCode}
+            </Text>
+          </View>
+
           <View style={styles.headerHero}>
             <ImageBackground
               source={heroSource}
@@ -207,100 +228,66 @@ export function PilgrimCard({ details, style }: PilgrimCardProps) {
             >
               <View style={styles.heroOverlay}>
                 <Text style={styles.heroTitle} numberOfLines={2}>
-                  {details.mawkibName}
+                  {details.pilgrimName}
                 </Text>
-                <View style={styles.heroBadge}>
-                  <Ionicons name="person-outline" size={12} color="#fff" />
-                  <Text style={styles.heroBadgeText} numberOfLines={1}>
-                    {details.pilgrimName}
-                  </Text>
-                </View>
               </View>
             </ImageBackground>
-          </View>
-
-          <View
-            style={[
-              styles.headerQr,
-              { backgroundColor: weekdayAccent.color },
-            ]}
-          >
-            <View style={styles.qrContent}>
-              <QRCode
-                value={cardUrl}
-                size={68}
-                color={weekdayAccent.textOnColor}
-                backgroundColor={weekdayAccent.color}
-              />
-              <Text
-                style={[styles.qrLabel, { color: weekdayAccent.textOnColor }]}
-              >
-                شناسه رزرو
-              </Text>
-              <Text
-                style={[styles.qrCode, { color: weekdayAccent.textOnColor }]}
-              >
-                {reservation.trackingCode}
-              </Text>
-            </View>
           </View>
         </View>
 
         <View style={styles.statsRow}>
-          <StatColumn
-            icon="call-outline"
-            label="موبایل"
-            value={reservation.pilgrimMobile}
-            valueDir="ltr"
-          />
-          <StatColumn
-            icon="calendar-outline"
-            label="تاریخ حضور"
-            value={stayRange}
-            subValue={stayWeekdays}
-          />
-          <View style={styles.statColumn}>
+          <View style={[styles.statColumn, styles.statColumnNarrow]}>
             <CircleIcon name="people-outline" />
-            <Text style={styles.statLabel}>تعداد همراهان</Text>
+            <Text style={styles.statLabel}>تعداد</Text>
             <CompanionValue
               male={reservation.maleGuestCount}
               female={reservation.femaleGuestCount}
             />
           </View>
+          <StatColumn
+            icon="calendar-outline"
+            label="تاریخ حضور"
+            value={stayRange}
+            subValue={stayWeekdays}
+            flex={2}
+          />
+          <StatColumn
+            icon="call-outline"
+            label="موبایل"
+            value={reservation.pilgrimMobile}
+            valueDir="ltr"
+            flex={0.9}
+          />
         </View>
 
         <View style={styles.panel}>
           <View style={styles.panelTitleRow}>
-            <Ionicons name="document-text-outline" size={16} color={CARD_TEAL} />
             <Text style={styles.panelTitle}>اطلاعات موکب</Text>
+            <Ionicons name="document-text-outline" size={16} color={CARD_TEAL} />
           </View>
 
-          <DetailRow
-            icon="home-outline"
-            label="نام موکب"
-            value={details.mawkibName}
-          />
-          <DetailRow
-            icon="location-outline"
-            label="آدرس"
-            value={mawkibAddress}
-          />
           <DetailRow
             icon="person-outline"
             label="مسئول موکب"
             value={`${ownerName} · ${ownerPhone}`}
             valueDir="ltr"
           />
+          <DetailRow
+            icon="location-outline"
+            label="آدرس موکب"
+            value={mawkibAddress}
+          />
+          <DetailRow
+            icon="map-outline"
+            label="آدرس نشان موکب"
+            value={neshanAddress}
+          />
 
-          {locationQrUrl ? (
+          {locationGeoUrl ? (
             <View style={styles.locationBlock}>
-              <Text style={styles.locationTitle}>موقعیت موکب</Text>
               <View style={styles.locationQrWrap}>
-                <QRCode value={locationQrUrl} size={72} color={CARD_TEAL} />
+                <QRCode value={locationGeoUrl} size={72} color={CARD_TEAL} />
               </View>
-              <Text style={styles.locationCaption}>
-                اسکن برای باز کردن نقشه (اسنپ، نشان و ...)
-              </Text>
             </View>
           ) : null}
         </View>
@@ -315,7 +302,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 16,
     overflow: "hidden",
-    direction: "rtl",
   },
   weekdayDot: {
     position: "absolute",
@@ -330,24 +316,24 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     width: "100%",
-    direction: "rtl",
-    alignItems: "stretch",
+    alignItems: "flex-end",
   },
   weekdayBannerText: {
-    ...rtlText,
+    width: "100%",
+    textAlign: "right",
+    writingDirection: "rtl",
     fontSize: 13,
     fontWeight: "700",
   },
   card: {
     width: "100%",
-    direction: "rtl",
     backgroundColor: "#fcfdfd",
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
     overflow: "hidden",
   },
+  // LTR: QR left, hero right
   header: {
-    direction: "rtl",
     flexDirection: "row",
     minHeight: 112,
     padding: 8,
@@ -370,50 +356,27 @@ const styles = StyleSheet.create({
   },
   heroOverlay: {
     width: "100%",
-    direction: "rtl",
-    alignItems: "stretch",
+    alignItems: "flex-end",
     backgroundColor: "rgba(55, 82, 81, 0.64)",
     padding: 10,
     gap: 6,
   },
   heroTitle: {
-    ...rtlText,
+    width: "100%",
     color: "#fff",
     fontSize: 14,
     fontWeight: "700",
-  },
-  heroBadge: {
-    alignSelf: "flex-start",
-    direction: "rtl",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    maxWidth: "100%",
-  },
-  heroBadgeText: {
-    ...rtlText,
-    color: "#fff",
-    fontSize: 11,
-    flexShrink: 1,
-    width: undefined,
+    textAlign: "right",
+    writingDirection: "rtl",
+    paddingRight: 4,
   },
   headerQr: {
     flex: 1,
     borderRadius: 10,
+    alignItems: "center",
     justifyContent: "center",
     paddingVertical: 8,
     paddingHorizontal: 8,
-    direction: "rtl",
-    alignItems: "stretch",
-  },
-  qrContent: {
-    width: "100%",
-    direction: "rtl",
-    alignItems: "center",
     gap: 4,
   },
   qrLabel: {
@@ -430,8 +393,8 @@ const styles = StyleSheet.create({
     writingDirection: "ltr",
     textAlign: "center",
   },
+  // LTR order: companions | date | mobile → mobile sits on the right
   statsRow: {
-    direction: "rtl",
     flexDirection: "row",
     borderTopWidth: 1,
     borderTopColor: CARD_TEAL_LIGHT,
@@ -440,14 +403,16 @@ const styles = StyleSheet.create({
   },
   statColumn: {
     flex: 1,
-    direction: "rtl",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "flex-start",
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     gap: 4,
-    borderStartWidth: 1,
-    borderStartColor: CARD_TEAL_LIGHT,
+    borderLeftWidth: 1,
+    borderLeftColor: CARD_TEAL_LIGHT,
+  },
+  statColumnNarrow: {
+    flex: 0.9,
   },
   circleIcon: {
     width: 28,
@@ -458,59 +423,60 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   statLabel: {
-    ...rtlText,
+    width: "100%",
     fontSize: 10,
     color: "#64748b",
+    textAlign: "center",
+    writingDirection: "rtl",
   },
   statValue: {
-    ...rtlText,
+    width: "100%",
     fontSize: 11,
     color: CARD_TEAL,
     fontWeight: "700",
+    textAlign: "center",
+    writingDirection: "rtl",
   },
   statSubValue: {
-    ...rtlText,
+    width: "100%",
     fontSize: 9,
     color: "#94a3b8",
+    textAlign: "center",
+    writingDirection: "rtl",
   },
   ltrValueText: {
     writingDirection: "ltr",
-    textAlign: "right",
+    textAlign: "center",
     width: "100%",
   },
   companionWrap: {
-    direction: "rtl",
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 4,
     flexWrap: "wrap",
-    justifyContent: "flex-start",
     width: "100%",
   },
   companionPart: {
-    direction: "rtl",
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
   },
   companionText: {
-    ...rtlText,
     fontSize: 11,
     color: CARD_TEAL,
     fontWeight: "700",
-    width: undefined,
+    textAlign: "center",
   },
   companionTotal: {
-    ...rtlText,
     fontSize: 10,
     color: "#64748b",
-    width: undefined,
+    textAlign: "center",
   },
   panel: {
     margin: 8,
     padding: 10,
     borderRadius: 10,
-    direction: "rtl",
     alignItems: "stretch",
     backgroundColor: "#fff",
     borderWidth: 1,
@@ -524,72 +490,62 @@ const styles = StyleSheet.create({
   },
   panelTitleRow: {
     width: "100%",
-    direction: "rtl",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
+    justifyContent: "flex-end",
     gap: 6,
     marginBottom: 2,
   },
   panelTitle: {
-    ...rtlText,
-    flex: 1,
     fontSize: 12,
     fontWeight: "700",
     color: CARD_TEAL,
+    textAlign: "right",
+    writingDirection: "rtl",
   },
   detailRow: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
     gap: 4,
   },
   detailKey: {
     width: "100%",
-    direction: "rtl",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
+    justifyContent: "flex-end",
     gap: 6,
   },
   detailLabel: {
-    ...rtlText,
-    flex: 1,
     fontSize: 11,
     color: "#64748b",
     fontWeight: "600",
+    textAlign: "right",
+    writingDirection: "rtl",
   },
   detailValue: {
-    ...rtlText,
+    width: "100%",
     fontSize: 11,
     color: CARD_TEAL,
     fontWeight: "600",
-    alignSelf: "stretch",
+    textAlign: "right",
+    writingDirection: "rtl",
+    paddingRight: 10,
+  },
+  detailValueLtr: {
+    writingDirection: "ltr",
+    textAlign: "right",
   },
   locationBlock: {
     width: "100%",
-    direction: "rtl",
     marginTop: 4,
-    alignItems: "flex-start",
-    gap: 6,
+    alignItems: "center",
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "rgba(26, 63, 63, 0.12)",
-  },
-  locationTitle: {
-    ...rtlText,
-    fontSize: 11,
-    fontWeight: "700",
-    color: CARD_TEAL,
   },
   locationQrWrap: {
     backgroundColor: "#fff",
     padding: 8,
     borderRadius: 10,
-  },
-  locationCaption: {
-    ...rtlText,
-    fontSize: 9,
-    color: "#64748b",
   },
 });

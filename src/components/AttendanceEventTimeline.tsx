@@ -134,7 +134,6 @@ export function AttendanceEventTimeline({
 const styles = StyleSheet.create({
   container: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
     gap: spacing.sm,
   },
@@ -165,7 +164,6 @@ const styles = StyleSheet.create({
   },
   dayCard: {
     width: "100%",
-    direction: "rtl",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -174,8 +172,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   dayHeader: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     gap: spacing.sm,
   },
@@ -189,8 +186,7 @@ const styles = StyleSheet.create({
   },
   dayHeaderText: {
     flex: 1,
-    direction: "rtl",
-    alignItems: "flex-start",
+    alignItems: "flex-end",
   },
   dayLabel: {
     fontSize: 12,
@@ -207,15 +203,13 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
   },
   timelineRow: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     flexWrap: "wrap",
     alignItems: "center",
     gap: spacing.xs,
   },
   eventBadge: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     gap: spacing.xs,
     borderRadius: radius.full,
@@ -245,8 +239,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(220, 38, 38, 0.12)",
   },
   eventTextWrap: {
-    direction: "rtl",
-    alignItems: "flex-start",
+    alignItems: "flex-end",
   },
   eventLabel: {
     fontSize: 10,

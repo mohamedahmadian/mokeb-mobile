@@ -10,13 +10,15 @@ import { AuthProvider, useAuth } from "@/src/contexts/AuthContext";
 import { NotifyProvider } from "@/src/contexts/NotifyContext";
 import { AppToaster } from "@/src/components/AppToaster";
 import { NotifyBridge } from "@/src/components/NotifyBridge";
+import { AndroidBackHandler } from "@/src/components/AndroidBackHandler";
 import { fontAssets } from "@/src/lib/fonts";
 import { colors } from "@/src/lib/theme";
 
-// Persian layout: native RTL for rows/flex-start.
-// Keep left/right style values unswapped so textAlign:"right" stays visual right.
-I18nManager.allowRTL(true);
-I18nManager.forceRTL(true);
+// Keep the native layout engine LTR. Persian RTL is applied explicitly via
+// styles (textAlign/row-reverse). forceRTL on Android flips textAlign and
+ // breaks the whole app after install.
+I18nManager.allowRTL(false);
+I18nManager.forceRTL(false);
 I18nManager.swapLeftAndRightInRTL(false);
 
 SplashScreen.preventAutoHideAsync();
@@ -63,19 +65,20 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, direction: "rtl" }}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <NotifyProvider>
               <NotifyBridge />
+              <AndroidBackHandler />
               <AuthGate>
                 <Stack
                   screenOptions={{
                     headerShown: false,
                     contentStyle: {
+                      flex: 1,
                       backgroundColor: colors.background,
-                      direction: "rtl",
                     },
                     animation: "fade_from_bottom",
                   }}

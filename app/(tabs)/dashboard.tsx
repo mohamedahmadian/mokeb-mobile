@@ -1,16 +1,23 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Text } from "@/src/lib/fonts";
-import { useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, type Href } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
+import { CapacityDayCarousel } from "@/src/components/capacity/CapacityDayCarousel";
+import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { ScreenContainer } from "@/src/components/ui";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { notify } from "@/src/lib/notify";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, spacing } from "@/src/lib/theme";
 import { fontFamilies } from "@/src/lib/fonts";
-import { getDashboardStats } from "@/src/services/mawkibs";
-
 type ServiceIcon = keyof typeof Ionicons.glyphMap;
 
 type ServiceItem = {
@@ -26,26 +33,6 @@ type ServiceSection = {
   title: string;
   items: ServiceItem[];
 };
-
-function StatChip({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: number;
-  accent: string;
-}) {
-  return (
-    <View style={styles.statChip}>
-      <View style={[styles.statDot, { backgroundColor: accent }]} />
-      <Text style={styles.statValue}>{value.toLocaleString("fa-IR")}</Text>
-      <Text style={styles.statLabel} numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
-  );
-}
 
 function ServiceTile({ item }: { item: ServiceItem }) {
   return (
@@ -63,9 +50,7 @@ function ServiceTile({ item }: { item: ServiceItem }) {
           name={item.icon}
           size={24}
           color={item.iconColor}
-          style={
-            item.icon === "log-in" ? styles.rtlDirectionalIcon : undefined
-          }
+          style={item.icon === "log-in" ? styles.rtlDirectionalIcon : undefined}
         />
       </View>
       <Text style={styles.serviceLabel} numberOfLines={2}>
@@ -89,23 +74,32 @@ function ServiceSectionBlock({ section }: { section: ServiceSection }) {
 }
 
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, ownerId, canManage, canViewReports, logout } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ["dashboard-stats", user?.id],
-    enabled: !!user,
-    queryFn: () => getDashboardStats(user!.id),
+  const { refreshing, onRefresh } = usePullToRefresh(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["mawkib-capacity-day"] });
+    await queryClient.invalidateQueries({ queryKey: ["mawkib-inventory"] });
   });
 
   const openTab = (href: Href) => router.push(href);
+
+  const openCapacityCalendar = (mawkibId?: number) => {
+    router.push({
+      pathname: "/menu/capacity-calendar",
+      params: mawkibId ? { mawkibId: String(mawkibId) } : undefined,
+    });
+  };
+
+  const requestId = () => String(Date.now());
 
   const openAttendanceView = (view: "search" | "present" | "absent") => {
     router.push({
       pathname: "/(tabs)/attendance",
       params: {
         attendanceView: view,
-        attendanceRequestId: String(Date.now()),
+        attendanceRequestId: requestId(),
       },
     });
   };
@@ -115,9 +109,65 @@ export default function DashboardScreen() {
       pathname: "/(tabs)/meals",
       params: {
         mealsView: "search",
-        mealsRequestId: String(Date.now()),
+        mealsRequestId: requestId(),
       },
     });
+  };
+
+  const openPilgrims = (action: "search" | "new") => {
+    router.push({
+      pathname: "/(tabs)/pilgrims",
+      params: {
+        pilgrimAction: action,
+        pilgrimRequestId: requestId(),
+      },
+    });
+  };
+
+  const openMawkibs = (action?: "new") => {
+    router.push({
+      pathname: "/menu/mawkibs",
+      params: action
+        ? {
+            mawkibAction: action,
+            mawkibRequestId: requestId(),
+          }
+        : undefined,
+    });
+  };
+
+  const openNewReservation = () => {
+    router.push({
+      pathname: "/(tabs)/reservations",
+      params: {
+        reservationAction: "new",
+        reservationRequestId: requestId(),
+      },
+    });
+  };
+
+  const openProfileEdit = () => {
+    router.push({
+      pathname: "/(tabs)/profile",
+      params: {
+        profileView: "edit",
+        profileRequestId: requestId(),
+      },
+    });
+  };
+
+  const confirmLogout = () => {
+    notify("خروج از سامانه", "آیا از خروج از حساب کاربری مطمئن هستید؟", [
+      { text: "انصراف", style: "cancel" },
+      {
+        text: "خروج",
+        style: "destructive",
+        onPress: async () => {
+          await logout();
+          router.replace("/(auth)/login");
+        },
+      },
+    ]);
   };
 
   const sections: ServiceSection[] = [
@@ -125,28 +175,20 @@ export default function DashboardScreen() {
       title: "زائر",
       items: [
         {
-          key: "pilgrims-list",
-          label: "لیست زائرین",
-          icon: "people",
-          tint: "#e0f2fe",
-          iconColor: "#0284c7",
-          onPress: () => openTab("/(tabs)/pilgrims"),
-        },
-        {
           key: "pilgrims-search",
           label: "جستجوی زائر",
           icon: "search",
           tint: "#ecfdf5",
           iconColor: "#059669",
-          onPress: () => openTab("/(tabs)/pilgrims"),
+          onPress: () => openPilgrims("search"),
         },
         {
-          key: "pilgrims-card",
-          label: "زائر کارت",
-          icon: "card",
-          tint: "#fff7ed",
-          iconColor: "#ea580c",
-          onPress: () => openTab("/(tabs)/reservations"),
+          key: "pilgrims-new",
+          label: "زائر جدید",
+          icon: "person-add",
+          tint: "#e0f2fe",
+          iconColor: "#0284c7",
+          onPress: () => openPilgrims("new"),
         },
       ],
     },
@@ -159,7 +201,7 @@ export default function DashboardScreen() {
           icon: "home",
           tint: colors.primaryLight,
           iconColor: colors.primaryDark,
-          onPress: () => openTab("/menu/mawkibs"),
+          onPress: () => openMawkibs(),
         },
         {
           key: "mawkibs-add",
@@ -167,7 +209,15 @@ export default function DashboardScreen() {
           icon: "add-circle",
           tint: "#f0fdf4",
           iconColor: "#16a34a",
-          onPress: () => openTab("/menu/mawkibs"),
+          onPress: () => openMawkibs("new"),
+        },
+        {
+          key: "mawkibs-capacity",
+          label: "تقویم ظرفیت",
+          icon: "calendar",
+          tint: "#e0f2fe",
+          iconColor: "#0284c7",
+          onPress: () => openCapacityCalendar(),
         },
       ],
     },
@@ -188,23 +238,7 @@ export default function DashboardScreen() {
           icon: "calendar-outline",
           tint: "#fef3c7",
           iconColor: "#d97706",
-          onPress: () => openTab("/(tabs)/reservations"),
-        },
-        {
-          key: "delivered-items",
-          label: "امانت‌ها",
-          icon: "briefcase",
-          tint: "#fce7f3",
-          iconColor: "#db2777",
-          onPress: () => openTab("/(tabs)/reservations"),
-        },
-        {
-          key: "extend",
-          label: "تمدید رزرو",
-          icon: "time",
-          tint: "#ecfeff",
-          iconColor: "#0891b2",
-          onPress: () => openTab("/(tabs)/reservations"),
+          onPress: openNewReservation,
         },
       ],
     },
@@ -256,117 +290,192 @@ export default function DashboardScreen() {
           iconColor: "#ca8a04",
           onPress: () => openTab("/(tabs)/meals"),
         },
+        ...(canViewReports
+          ? [
+              {
+                key: "meals-report",
+                label: "گزارش",
+                icon: "document-text" as const,
+                tint: "#e2e8f0",
+                iconColor: "#475569",
+                onPress: () =>
+                  notify("توجه", "گزارش وعده غذایی هنوز پیاده‌سازی نشده است"),
+              },
+            ]
+          : []),
+      ],
+    },
+    ...(canViewReports
+      ? [
+          {
+            title: "گزارشات",
+            items: [
+              {
+                key: "reports-pilgrims",
+                label: "گزارشات زائرین",
+                icon: "stats-chart" as const,
+                tint: "#ecfdf5",
+                iconColor: "#059669",
+                onPress: () => openTab("/menu/reports-pilgrims"),
+              },
+              {
+                key: "reports-mawkibs",
+                label: "گزارشات موکب",
+                icon: "pie-chart" as const,
+                tint: colors.accentLight,
+                iconColor: colors.accent,
+                onPress: () => openTab("/menu/reports-mawkibs"),
+              },
+            ],
+          } satisfies ServiceSection,
+        ]
+      : []),
+    {
+      title: "پروفایل",
+      items: [
         {
-          key: "meals-report",
-          label: "گزارش",
-          icon: "document-text",
-          tint: "#e2e8f0",
-          iconColor: "#475569",
-          onPress: () =>
-            notify("توجه", "گزارش وعده غذایی هنوز پیاده‌سازی نشده است"),
+          key: "profile-edit",
+          label: "ویرایش اطلاعات",
+          icon: "person-circle",
+          tint: "#e8eef6",
+          iconColor: colors.primaryDark,
+          onPress: openProfileEdit,
+        },
+        {
+          key: "profile-password",
+          label: "تغییر رمز عبور",
+          icon: "key",
+          tint: "#fff7ed",
+          iconColor: "#ea580c",
+          onPress: () => openTab("/menu/change-password"),
+        },
+        {
+          key: "profile-logout",
+          label: "خروج از حساب",
+          icon: "log-out",
+          tint: colors.dangerLight,
+          iconColor: colors.danger,
+          onPress: confirmLogout,
         },
       ],
     },
+    ...(canManage
+      ? [
+          {
+            title: "مدیریت",
+            items: [
+              {
+                key: "manage-servants",
+                label: "خادمین",
+                icon: "people-circle" as const,
+                tint: "#ecfeff",
+                iconColor: "#0e7490",
+                onPress: () => openTab("/menu/servants"),
+              },
+              {
+                key: "manage-pilgrims",
+                label: "زائرین",
+                icon: "people" as const,
+                tint: "#e0f2fe",
+                iconColor: "#0284c7",
+                onPress: () =>
+                  router.push({
+                    pathname: "/menu/manage-data",
+                    params: { section: "pilgrims" },
+                  }),
+              },
+              {
+                key: "manage-reservations",
+                label: "رزروها",
+                icon: "calendar" as const,
+                tint: "#e8eef6",
+                iconColor: colors.primary,
+                onPress: () =>
+                  router.push({
+                    pathname: "/menu/manage-data",
+                    params: { section: "reservations" },
+                  }),
+              },
+              {
+                key: "manage-attendance",
+                label: "ورود و خروج",
+                icon: "log-in" as const,
+                tint: "#d1fae5",
+                iconColor: colors.success,
+                onPress: () =>
+                  router.push({
+                    pathname: "/menu/manage-data",
+                    params: { section: "attendance" },
+                  }),
+              },
+              {
+                key: "manage-meals",
+                label: "وعده غذایی",
+                icon: "restaurant" as const,
+                tint: "#ffedd5",
+                iconColor: "#c2410c",
+                onPress: () =>
+                  router.push({
+                    pathname: "/menu/manage-data",
+                    params: { section: "meals" },
+                  }),
+              },
+            ],
+          } satisfies ServiceSection,
+        ]
+      : []),
   ];
 
   return (
     <ScreenContainer>
       <AppHeader
         title="داشبورد"
-        subtitle={`خوش آمدید ${user?.fullName ?? ""}`}
+        subtitle={`${user?.fullName ?? ""}${
+          user?.roles.includes("MawkibServant") &&
+          !user?.roles.includes("MawkibOwner")
+            ? " (خادم)"
+            : ""
+        }`}
+        showProfile
+        showLogo
       />
 
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+            progressBackgroundColor={colors.surface}
+          />
+        }
       >
-        <View style={styles.statsSection}>
-          {isLoading ? (
-            <Text style={styles.loading}>در حال بارگذاری...</Text>
-          ) : (
-            <View style={styles.statsGrid}>
-              <StatChip
-                label="موکب"
-                value={stats?.mawkibCount ?? 0}
-                accent={colors.accent}
-              />
-              <StatChip
-                label="زائر"
-                value={stats?.pilgrimCount ?? 0}
-                accent="#0284c7"
-              />
-              <StatChip
-                label="رزرو"
-                value={stats?.totalReservations ?? 0}
-                accent={colors.primary}
-              />
-              <StatChip
-                label="حاضر"
-                value={stats?.presentGuests ?? 0}
-                accent={colors.success}
-              />
-            </View>
-          )}
-        </View>
+        {ownerId ? (
+          <CapacityDayCarousel
+            ownerId={ownerId}
+            canOpenDetails={canViewReports}
+            onOpenDetails={() => openTab("/menu/reports-mawkibs")}
+            onOpenCalendar={openCapacityCalendar}
+          />
+        ) : null}
 
         {sections.map((section) => (
           <ServiceSectionBlock key={section.title} section={section} />
         ))}
       </ScrollView>
+      <NewReservationFab />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   content: {
+    paddingTop: spacing.md,
     paddingBottom: spacing.xxl + 12,
     gap: spacing.lg,
-  },
-  loading: {
-    ...typography.caption,
-    textAlign: "center",
-    color: colors.textMuted,
-    width: "100%",
-    paddingVertical: spacing.sm,
-  },
-  statsSection: {
-    paddingHorizontal: spacing.lg,
-  },
-  statsGrid: {
-    direction: "rtl",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  statChip: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: 2,
-    alignItems: "center",
-    gap: 2,
-  },
-  statDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginBottom: 2,
-  },
-  statValue: {
-    fontFamily: fontFamilies.bold,
-    fontSize: 15,
-    color: colors.text,
-    textAlign: "center",
-    writingDirection: "rtl",
-  },
-  statLabel: {
-    fontFamily: fontFamilies.regular,
-    fontSize: 10,
-    color: colors.textMuted,
-    textAlign: "center",
-    writingDirection: "rtl",
   },
   section: {
     paddingHorizontal: spacing.lg,

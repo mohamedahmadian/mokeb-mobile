@@ -1,17 +1,12 @@
 import { getDatabase } from "@/src/db/client";
-
+import { reservationRowMatchesQuery } from "@/src/lib/reservation-lookup";
 import type {
-
   Reservation,
-
   ReservationEvent,
-
   ReservationEventType,
-
   ReservationPresenceState,
-
 } from "@/src/types";
-
+import { listPendingDeliveredItemsByReservation } from "./delivered-items";
 import { getReservationById } from "./reservations";
 
 
@@ -168,7 +163,17 @@ export async function recordAttendanceEvent(
 
   assertEventAllowed(eventType, reservation.presenceState, reservation);
 
-
+  if (eventType === "EARLY_CHECKOUT") {
+    const pendingItems = await listPendingDeliveredItemsByReservation(
+      ownerUserId,
+      reservationId,
+    );
+    if (pendingItems.length > 0) {
+      throw new Error(
+        "قبل از خروج نهایی، وضعیت امانت‌های تحویل‌داده‌شده را مشخص کنید",
+      );
+    }
+  }
 
   const presenceState = nextPresenceState(
 
@@ -297,76 +302,52 @@ export async function listAttendanceEvents(
 
 
 export async function listPresentReservations(
-
   ownerUserId: number,
-
   filters: { mawkibId?: number; query?: string } = {},
-
 ): Promise<Reservation[]> {
-
   const db = await getDatabase();
-
   const clauses = [
-
     "m.ownerUserId = ?",
-
     "r.status = 'Confirmed'",
-
     "r.presenceState = 'PRESENT'",
-
   ];
-
   const params: (string | number)[] = [ownerUserId];
 
-
-
   if (filters.mawkibId) {
-
     clauses.push("r.mawkibId = ?");
-
     params.push(filters.mawkibId);
-
   }
 
-  if (filters.query) {
-
-    clauses.push(
-
-      "(r.trackingCode LIKE ? OR p.fullName LIKE ? OR r.pilgrimMobile LIKE ? OR p.nationalId LIKE ?)",
-
-    );
-
-    const q = `%${filters.query.trim()}%`;
-
-    params.push(q, q, q, q);
-
-  }
-
-
-
-  const rows = await db.getAllAsync<Reservation & { mawkibName: string; pilgrimName: string }>(
-
+  const rows = await db.getAllAsync<
+    Reservation & {
+      mawkibName: string;
+      pilgrimName: string;
+      pilgrimNationalId?: string | null;
+    }
+  >(
     `SELECT r.*, m.name as mawkibName, p.fullName as pilgrimName,
             p.nationalId as pilgrimNationalId
-
      FROM reservations r
-
      INNER JOIN mawkibs m ON m.id = r.mawkibId
-
      INNER JOIN users p ON p.id = r.pilgrimUserId
-
      WHERE ${clauses.join(" AND ")}
-
      ORDER BY r.actualCheckInAt DESC`,
-
     params,
-
   );
 
-
-
-  return rows;
-
+  if (!filters.query?.trim()) return rows;
+  return rows.filter((row) =>
+    reservationRowMatchesQuery(
+      {
+        trackingCode: row.trackingCode,
+        pilgrimMobile: row.pilgrimMobile,
+        pilgrimName: row.pilgrimName,
+        pilgrimNationalId: row.pilgrimNationalId,
+        mawkibName: row.mawkibName,
+      },
+      filters.query!,
+    ),
+  );
 }
 
 export async function listAbsentReservations(
@@ -386,15 +367,13 @@ export async function listAbsentReservations(
     params.push(filters.mawkibId);
   }
 
-  if (filters.query) {
-    clauses.push(
-      "(r.trackingCode LIKE ? OR p.fullName LIKE ? OR r.pilgrimMobile LIKE ? OR p.nationalId LIKE ?)",
-    );
-    const q = `%${filters.query.trim()}%`;
-    params.push(q, q, q, q);
-  }
-
-  return db.getAllAsync<Reservation>(
+  const rows = await db.getAllAsync<
+    Reservation & {
+      mawkibName: string;
+      pilgrimName: string;
+      pilgrimNationalId?: string | null;
+    }
+  >(
     `SELECT r.*, m.name as mawkibName, p.fullName as pilgrimName,
             p.nationalId as pilgrimNationalId
      FROM reservations r
@@ -406,62 +385,47 @@ export async function listAbsentReservations(
        r.createdAt DESC`,
     params,
   );
+
+  if (!filters.query?.trim()) return rows;
+  return rows.filter((row) =>
+    reservationRowMatchesQuery(
+      {
+        trackingCode: row.trackingCode,
+        pilgrimMobile: row.pilgrimMobile,
+        pilgrimName: row.pilgrimName,
+        pilgrimNationalId: row.pilgrimNationalId,
+        mawkibName: row.mawkibName,
+      },
+      filters.query!,
+    ),
+  );
 }
-
-
 
 export type AttendanceActionVisibility = {
-
   canInitialCheckIn: boolean;
-
   canTempIn: boolean;
-
   canTempOut: boolean;
-
   canFinalCheckout: boolean;
-
 };
 
-
-
 export function getAttendanceActionVisibility(
-
   reservation: Reservation,
-
 ): AttendanceActionVisibility {
-
   const presence = reservation.presenceState;
-
   const isActive =
-
     reservation.status === "Confirmed" || reservation.status === "Completed";
 
-
-
   return {
-
     canInitialCheckIn:
-
       isActive &&
-
       presence === "NOT_ARRIVED" &&
-
       !reservation.actualCheckInAt,
-
     canTempOut: isActive && presence === "PRESENT",
-
     canTempIn: isActive && presence === "TEMPORARILY_OUT",
-
     canFinalCheckout:
-
       isActive &&
-
       !reservation.actualCheckOutAt &&
-
       (presence === "PRESENT" || presence === "TEMPORARILY_OUT"),
-
   };
-
 }
-
 

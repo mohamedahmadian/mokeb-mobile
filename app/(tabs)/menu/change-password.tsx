@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
+import { NewReservationFab } from "@/src/components/NewReservationFab";
 import {
   AppInput,
   PrimaryButton,
@@ -83,6 +84,7 @@ export default function ChangePasswordScreen() {
           onPress={handleSubmit}
         />
       </StickyBottomAction>
+      <NewReservationFab bottomOffset={72} />
     </ScreenContainer>
   );
 }

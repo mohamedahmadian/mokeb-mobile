@@ -69,6 +69,11 @@ const styles = StyleSheet.create({
   dashboardButtonActive: {
     backgroundColor: colors.primary,
   },
+  tabScene: {
+    flex: 1,
+    minHeight: 0,
+    width: "100%",
+  },
 });
 
 export default function TabLayout() {
@@ -78,6 +83,10 @@ export default function TabLayout() {
   return (
     <Tabs
       initialRouteName="dashboard"
+      backBehavior="history"
+      screenLayout={({ children }) => (
+        <View style={styles.tabScene}>{children}</View>
+      )}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -109,26 +118,28 @@ export default function TabLayout() {
           marginBottom: 4,
         },
         sceneStyle: {
+          flex: 1,
           backgroundColor: colors.background,
         },
       }}
     >
-      {/* ترتیب بصری RTL: راست → چپ = زائر، رزرو، داشبورد، ورود و خروج، وعده */}
+      {/* ترتیب بصری راست→چپ: رزرو، زائر، داشبورد، ورود و خروج، وعده */}
+      {/* در موتور LTR، ترتیب اعلان برعکس می‌شود تا راست‌ترین آیتم رزرو باشد */}
       <Tabs.Screen
-        name="pilgrims"
+        name="meals"
         options={{
-          title: "زائر",
+          title: "وعده غذایی",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="people" color={color} focused={focused} />
+            <TabIcon name="restaurant" color={color} focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
-        name="reservations"
+        name="attendance"
         options={{
-          title: "رزرو",
+          title: "ورود و خروج",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="calendar" color={color} focused={focused} />
+            <TabIcon name="log-in" color={color} focused={focused} />
           ),
         }}
       />
@@ -149,20 +160,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="attendance"
+        name="pilgrims"
         options={{
-          title: "ورود و خروج",
+          title: "زائر",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="log-in" color={color} focused={focused} />
+            <TabIcon name="people" color={color} focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
-        name="meals"
+        name="reservations"
         options={{
-          title: "وعده غذایی",
+          title: "رزرو",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="restaurant" color={color} focused={focused} />
+            <TabIcon name="calendar" color={color} focused={focused} />
           ),
         }}
       />

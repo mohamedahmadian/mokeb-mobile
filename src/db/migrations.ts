@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS user_roles (
 CREATE TABLE IF NOT EXISTS mawkibs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  mawkibType TEXT,
   address TEXT NOT NULL,
   neshanAddressUrl TEXT,
   latitude REAL,
@@ -183,6 +184,20 @@ CREATE INDEX IF NOT EXISTS idx_delivered_items_reservation ON reservation_delive
 export const SEED_ROLES_SQL = `
 INSERT OR IGNORE INTO roles (id, name) VALUES (1, 'MawkibOwner');
 INSERT OR IGNORE INTO roles (id, name) VALUES (2, 'Pilgrim');
+INSERT OR IGNORE INTO roles (id, name) VALUES (3, 'MawkibServant');
+`;
+
+/** جداول اضافه‌شده پس از schema اولیه — برای نصب‌های قدیمی هم امن است */
+export const EXTRA_TABLES_SQL = `
+CREATE TABLE IF NOT EXISTS mawkib_servants (
+  servantUserId INTEGER NOT NULL PRIMARY KEY,
+  ownerUserId INTEGER NOT NULL,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (servantUserId) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (ownerUserId) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_mawkib_servants_owner ON mawkib_servants(ownerUserId);
 `;
 
 // CREATE TABLE IF NOT EXISTS ستون‌های جدید را به دیتابیس‌های نصب‌شده اضافه نمی‌کند.
@@ -210,6 +225,7 @@ export const USER_COLUMN_MIGRATIONS = [
 // دیتابیس‌های نصب‌شده ممکن است جدول قدیمی و ساده‌شدهٔ موکب‌ها را داشته باشند.
 // همهٔ ستون‌های مدل کامل موکب هنگام راه‌اندازی بررسی و در صورت نیاز اضافه می‌شوند.
 export const MAWKIB_COLUMN_MIGRATIONS = [
+  ["mawkibType", "TEXT"],
   ["neshanAddressUrl", "TEXT"],
   ["latitude", "REAL"],
   ["longitude", "REAL"],

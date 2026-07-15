@@ -11,6 +11,10 @@ import {
 } from "@/src/lib/labels";
 import { notify } from "@/src/lib/notify";
 import { formatPersianDate } from "@/src/lib/persianDate";
+import {
+  getReservationSearchCardDetails,
+  getReservationSearchCardStyle,
+} from "@/src/lib/reservation-search-card";
 import { colors, spacing } from "@/src/lib/theme";
 import {
   listMealPlans,
@@ -22,6 +26,7 @@ import type { MealPlan, Reservation } from "@/src/types";
 
 type MealReservationCardProps = {
   reservation: Reservation;
+  searchMode?: boolean;
 };
 
 function presenceBadgeColor(presence: Reservation["presenceState"]) {
@@ -37,25 +42,28 @@ function presenceBadgeColor(presence: Reservation["presenceState"]) {
   }
 }
 
-export function MealReservationCard({ reservation }: MealReservationCardProps) {
-  const { user } = useAuth();
+export function MealReservationCard({
+  reservation,
+  searchMode = false,
+}: MealReservationCardProps) {
+  const { user, ownerId } = useAuth();
   const queryClient = useQueryClient();
   const [busyMealId, setBusyMealId] = useState<number | null>(null);
   const presenceColors = presenceBadgeColor(reservation.presenceState);
 
   const mealsQuery = useQuery({
-    queryKey: ["meal-plans", user?.id, reservation.id],
-    enabled: !!user,
-    queryFn: () => listMealPlans(user!.id, reservation.id),
+    queryKey: ["meal-plans", ownerId, reservation.id],
+    enabled: !!ownerId,
+    queryFn: () => listMealPlans(ownerId!, reservation.id),
   });
 
   const invalidateMeals = () =>
     queryClient.invalidateQueries({
-      queryKey: ["meal-plans", user?.id, reservation.id],
+      queryKey: ["meal-plans", ownerId, reservation.id],
     });
 
   const createMutation = useMutation({
-    mutationFn: () => regenerateMealPlans(user!.id, reservation.id),
+    mutationFn: () => regenerateMealPlans(ownerId!, reservation.id),
     onSuccess: () => {
       invalidateMeals();
       notify("موفق", "برنامه غذایی ایجاد شد");
@@ -72,7 +80,7 @@ export function MealReservationCard({ reservation }: MealReservationCardProps) {
       isRequired: boolean;
     }) => {
       setBusyMealId(mealPlanId);
-      return toggleMealRequired(user!.id, mealPlanId, isRequired);
+      return toggleMealRequired(ownerId!, mealPlanId, isRequired);
     },
     onSuccess: invalidateMeals,
     onError: (error: Error) => notify("خطا", error.message),
@@ -88,7 +96,7 @@ export function MealReservationCard({ reservation }: MealReservationCardProps) {
       isServed: boolean;
     }) => {
       setBusyMealId(mealPlanId);
-      return toggleMealServed(user!.id, mealPlanId, isServed);
+      return toggleMealServed(ownerId!, mealPlanId, isServed);
     },
     onSuccess: invalidateMeals,
     onError: (error: Error) => notify("خطا", error.message),
@@ -116,6 +124,64 @@ export function MealReservationCard({ reservation }: MealReservationCardProps) {
       : ""
   }`;
 
+  const cardDetails = searchMode
+    ? getReservationSearchCardDetails(reservation)
+    : [
+        {
+          icon: "barcode-outline" as const,
+          label: "شناسه رزرو",
+          value: reservation.trackingCode,
+        },
+        {
+          icon: "call-outline" as const,
+          label: "موبایل",
+          value: reservation.pilgrimMobile,
+        },
+        ...(reservation.pilgrimNationalId
+          ? [
+              {
+                icon: "id-card-outline" as const,
+                label: "کد ملی",
+                value: reservation.pilgrimNationalId,
+              },
+            ]
+          : []),
+        {
+          icon: "home-outline" as const,
+          label: "موکب",
+          value: reservation.mawkibName ?? "نامشخص",
+        },
+        {
+          icon: "calendar-outline" as const,
+          label: "تاریخ اقامت",
+          value: `${formatPersianDate(reservation.reservationDate)} تا ${formatPersianDate(reservation.reservationEndDate)}`,
+        },
+        {
+          icon: "people-outline" as const,
+          label: "تعداد",
+          value: guestSummary,
+        },
+        {
+          icon: "log-in-outline" as const,
+          label: reservation.actualCheckInAt ? "ورود واقعی" : "ساعت ورود",
+          value: reservation.actualCheckInAt
+            ? formatTimeFromIso(reservation.actualCheckInAt)
+            : "ثبت نشده",
+        },
+        {
+          icon: "log-out-outline" as const,
+          label: reservation.actualCheckOutAt ? "خروج واقعی" : "ساعت خروج",
+          value: reservation.actualCheckOutAt
+            ? formatTimeFromIso(reservation.actualCheckOutAt)
+            : "ثبت نشده",
+        },
+        {
+          icon: "information-circle-outline" as const,
+          label: "وضعیت رزرو",
+          value: reservationStatusLabel[reservation.status],
+        },
+      ];
+
   return (
     <View style={styles.wrap}>
       <ListCard
@@ -124,61 +190,10 @@ export function MealReservationCard({ reservation }: MealReservationCardProps) {
         badge={presenceStateLabel[reservation.presenceState]}
         badgeColor={presenceColors.bg}
         badgeTextColor={presenceColors.text}
-        details={[
-          {
-            icon: "barcode-outline",
-            label: "شناسه رزرو",
-            value: reservation.trackingCode,
-          },
-          {
-            icon: "call-outline",
-            label: "موبایل",
-            value: reservation.pilgrimMobile,
-          },
-          ...(reservation.pilgrimNationalId
-            ? [
-                {
-                  icon: "id-card-outline" as const,
-                  label: "کد ملی",
-                  value: reservation.pilgrimNationalId,
-                },
-              ]
-            : []),
-          {
-            icon: "home-outline",
-            label: "موکب",
-            value: reservation.mawkibName ?? "نامشخص",
-          },
-          {
-            icon: "calendar-outline",
-            label: "تاریخ اقامت",
-            value: `${formatPersianDate(reservation.reservationDate)} تا ${formatPersianDate(reservation.reservationEndDate)}`,
-          },
-          {
-            icon: "people-outline",
-            label: "تعداد",
-            value: guestSummary,
-          },
-          {
-            icon: "log-in-outline",
-            label: reservation.actualCheckInAt ? "ورود واقعی" : "ساعت ورود",
-            value: reservation.actualCheckInAt
-              ? formatTimeFromIso(reservation.actualCheckInAt)
-              : "ثبت نشده",
-          },
-          {
-            icon: "log-out-outline",
-            label: reservation.actualCheckOutAt ? "خروج واقعی" : "ساعت خروج",
-            value: reservation.actualCheckOutAt
-              ? formatTimeFromIso(reservation.actualCheckOutAt)
-              : "ثبت نشده",
-          },
-          {
-            icon: "information-circle-outline",
-            label: "وضعیت رزرو",
-            value: reservationStatusLabel[reservation.status],
-          },
-        ]}
+        style={
+          searchMode ? getReservationSearchCardStyle(reservation.status) : undefined
+        }
+        details={cardDetails}
         footer={
           <View style={styles.actions}>
             <PrimaryButton

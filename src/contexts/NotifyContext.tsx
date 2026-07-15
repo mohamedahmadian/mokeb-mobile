@@ -15,8 +15,9 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import { Text } from "@/src/lib/fonts";
+import { Text, fontFamilies } from "@/src/lib/fonts";
 import { PrimaryButton } from "@/src/components/ui";
+import { useAppBackHandler } from "@/src/hooks/useAppBackHandler";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
 
 export type AlertButton = {
@@ -55,6 +56,15 @@ function ConfirmDialog({
   state: ConfirmState | null;
   onClose: () => void;
 }) {
+  useAppBackHandler(
+    () => {
+      state?.onCancel?.();
+      onClose();
+      return true;
+    },
+    !!state,
+  );
+
   if (!state) return null;
 
   const iconName = state.destructive
@@ -94,14 +104,14 @@ function ConfirmDialog({
           />
 
           <View style={styles.headerRow}>
-            <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
-              <Ionicons name={iconName} size={24} color={iconColor} />
-            </View>
             <View style={styles.headerText}>
               <Text style={styles.title}>{state.title}</Text>
               {state.message ? (
                 <Text style={styles.message}>{state.message}</Text>
               ) : null}
+            </View>
+            <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
+              <Ionicons name={iconName} size={24} color={iconColor} />
             </View>
           </View>
 
@@ -134,6 +144,14 @@ function ActionSheet({
   state: ActionSheetState | null;
   onClose: () => void;
 }) {
+  useAppBackHandler(
+    () => {
+      onClose();
+      return true;
+    },
+    !!state,
+  );
+
   if (!state) return null;
 
   const handlePress = (button: AlertButton) => {
@@ -181,15 +199,6 @@ function ActionSheet({
                     pressed && styles.sheetActionPressed,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.sheetActionLabel,
-                      isDestructive && styles.sheetActionDestructive,
-                      isCancel && styles.sheetActionCancelLabel,
-                    ]}
-                  >
-                    {button.text}
-                  </Text>
                   <Ionicons
                     name={
                       isDestructive
@@ -207,6 +216,15 @@ function ActionSheet({
                           : colors.primary
                     }
                   />
+                  <Text
+                    style={[
+                      styles.sheetActionLabel,
+                      isDestructive && styles.sheetActionDestructive,
+                      isCancel && styles.sheetActionCancelLabel,
+                    ]}
+                  >
+                    {button.text}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -274,7 +292,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
     overflow: "hidden",
-    direction: "rtl",
     shadowColor: "#0f172a",
     shadowOpacity: 0.16,
     shadowRadius: 24,
@@ -293,6 +310,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
   },
   headerRow: {
+    // متن سپس آیکون → آیکون سمت راست
     flexDirection: "row",
     alignItems: "flex-start",
     gap: spacing.md,
@@ -309,19 +327,25 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     gap: spacing.xs,
+    alignItems: "stretch",
   },
   title: {
     ...typography.subtitle,
+    width: "100%",
     textAlign: "right",
+    writingDirection: "rtl",
     color: colors.text,
   },
   message: {
     ...typography.body,
+    width: "100%",
     textAlign: "right",
+    writingDirection: "rtl",
     color: colors.textMuted,
     lineHeight: 22,
   },
   actions: {
+    // تأیید چپ، انصراف راست
     flexDirection: "row",
     gap: spacing.sm,
   },
@@ -341,7 +365,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.lg,
-    direction: "rtl",
     borderTopWidth: 1,
     borderColor: colors.borderLight,
   },
@@ -359,24 +382,31 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
+    alignItems: "stretch",
   },
   sheetTitle: {
     ...typography.subtitle,
+    width: "100%",
     textAlign: "right",
+    writingDirection: "rtl",
     color: colors.text,
   },
   sheetMessage: {
     ...typography.body,
+    width: "100%",
     textAlign: "right",
+    writingDirection: "rtl",
     color: colors.textMuted,
   },
   sheetActions: {
     maxHeight: 320,
   },
   sheetAction: {
+    // آیکون چپ، برچسب راست
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: spacing.sm,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
@@ -396,11 +426,12 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.text,
     textAlign: "right",
+    writingDirection: "rtl",
     flex: 1,
   },
   sheetActionDestructive: {
     color: colors.danger,
-    fontFamily: "Vazir-Medium",
+    fontFamily: fontFamilies.medium,
   },
   sheetActionCancelLabel: {
     color: colors.textMuted,

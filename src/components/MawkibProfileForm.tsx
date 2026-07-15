@@ -12,6 +12,7 @@ import type { Mawkib, MawkibCity, MawkibCountry } from "@/src/types";
 
 export type MawkibFormData = {
   name: string;
+  mawkibType: string;
   address: string;
   neshanAddressUrl: string;
   latitude: string;
@@ -60,6 +61,7 @@ export type MawkibFormData = {
 export function createMawkibFormData(mawkib?: Mawkib | null): MawkibFormData {
   return {
     name: mawkib?.name ?? "",
+    mawkibType: mawkib?.mawkibType ?? "",
     address: mawkib?.address ?? "",
     neshanAddressUrl: mawkib?.neshanAddressUrl ?? "",
     latitude:
@@ -120,6 +122,7 @@ export function mawkibFormToInput(value: MawkibFormData): MawkibInput {
 
   return {
     name: value.name,
+    mawkibType: value.mawkibType,
     address: value.address,
     neshanAddressUrl: value.neshanAddressUrl,
     latitude: Number.isFinite(latitude) ? latitude : null,
@@ -179,14 +182,14 @@ function ToggleChip({ label, selected, onPress }: ToggleChipProps) {
       onPress={onPress}
       style={[styles.chip, selected && styles.chipSelected]}
     >
+      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+        {label}
+      </Text>
       <Ionicons
         name={selected ? "checkmark-circle" : "ellipse-outline"}
         size={16}
         color={selected ? colors.primaryDark : colors.textMuted}
       />
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-        {label}
-      </Text>
     </Pressable>
   );
 }
@@ -283,29 +286,68 @@ export function MawkibProfileForm({ value, onChange }: MawkibProfileFormProps) {
 
   return (
     <View style={styles.form}>
-      <SectionTitle title="اطلاعات اصلی" />
+      <SectionTitle title="اطلاعات ضروری" />
       <AppInput
         label="نام موکب"
+        required
         value={value.name}
         onChangeText={(text) => setField("name", text)}
       />
       <AppInput
+        label="شماره تماس"
+        required
+        value={value.phoneNumber}
+        onChangeText={(text) => setField("phoneNumber", text)}
+        keyboardType="phone-pad"
+      />
+      <AppInput
         label="آدرس"
+        required
         value={value.address}
         onChangeText={(text) => setField("address", text)}
         multiline
+      />
+      <AppInput
+        label="ظرفیت مرد"
+        required
+        value={value.maleCapacity}
+        onChangeText={(text) => setField("maleCapacity", text)}
+        keyboardType="number-pad"
+      />
+      <AppInput
+        label="ظرفیت زن"
+        required
+        value={value.femaleCapacity}
+        onChangeText={(text) => setField("femaleCapacity", text)}
+        keyboardType="number-pad"
+      />
+      <AppInput
+        label="حداکثر روز رزرو"
+        required
+        value={value.maxReservationDays}
+        onChangeText={(text) => setField("maxReservationDays", text)}
+        keyboardType="number-pad"
+      />
+      <AppInput
+        label="مدت پیش‌فرض رزرو (روز)"
+        required
+        value={value.defaultReservationDays}
+        onChangeText={(text) => setField("defaultReservationDays", text)}
+        keyboardType="number-pad"
+      />
+
+      <SectionTitle title="اطلاعات تکمیلی" />
+      <AppInput
+        label="نوع"
+        value={value.mawkibType}
+        onChangeText={(text) => setField("mawkibType", text)}
+        placeholder="خانه، حسینیه، مسجد، ورزشگاه و ..."
       />
       <AppInput
         label="لینک نشان / نقشه"
         value={value.neshanAddressUrl}
         onChangeText={(text) => setField("neshanAddressUrl", text)}
         autoCapitalize="none"
-      />
-      <AppInput
-        label="شماره تماس"
-        value={value.phoneNumber}
-        onChangeText={(text) => setField("phoneNumber", text)}
-        keyboardType="phone-pad"
       />
       <AppInput
         label="توضیحات"
@@ -396,19 +438,7 @@ export function MawkibProfileForm({ value, onChange }: MawkibProfileFormProps) {
         onChangeText={(text) => setField("distanceToMetro", text)}
       />
 
-      <SectionTitle title="ظرفیت و زمان خدمت" />
-      <AppInput
-        label="ظرفیت مرد"
-        value={value.maleCapacity}
-        onChangeText={(text) => setField("maleCapacity", text)}
-        keyboardType="number-pad"
-      />
-      <AppInput
-        label="ظرفیت زن"
-        value={value.femaleCapacity}
-        onChangeText={(text) => setField("femaleCapacity", text)}
-        keyboardType="number-pad"
-      />
+      <SectionTitle title="زمان خدمت" />
       <AppInput
         label="شروع خدمت (مثال: ۱۴۰۴/۰۶/۰۱)"
         value={value.serviceStartDate}
@@ -430,18 +460,6 @@ export function MawkibProfileForm({ value, onChange }: MawkibProfileFormProps) {
         value={value.defaultCheckOutTime}
         onChangeText={(text) => setField("defaultCheckOutTime", text)}
         placeholder="11:00"
-      />
-      <AppInput
-        label="حداکثر روز رزرو"
-        value={value.maxReservationDays}
-        onChangeText={(text) => setField("maxReservationDays", text)}
-        keyboardType="number-pad"
-      />
-      <AppInput
-        label="مدت پیش‌فرض رزرو (روز)"
-        value={value.defaultReservationDays}
-        onChangeText={(text) => setField("defaultReservationDays", text)}
-        keyboardType="number-pad"
       />
 
       <SectionTitle title="وعده‌های غذایی" />
@@ -578,23 +596,23 @@ export function MawkibProfileForm({ value, onChange }: MawkibProfileFormProps) {
             style={styles.imageActionButton}
             onPress={() => chooseImage("library")}
           >
+            <Text style={styles.imageActionText}>گالری</Text>
             <Ionicons
               name="images-outline"
               size={18}
               color={colors.primaryDark}
             />
-            <Text style={styles.imageActionText}>گالری</Text>
           </Pressable>
           <Pressable
             style={styles.imageActionButton}
             onPress={() => chooseImage("camera")}
           >
+            <Text style={styles.imageActionText}>دوربین</Text>
             <Ionicons
               name="camera-outline"
               size={18}
               color={colors.primaryDark}
             />
-            <Text style={styles.imageActionText}>دوربین</Text>
           </Pressable>
         </View>
         {value.imageUrl ? (
@@ -602,8 +620,8 @@ export function MawkibProfileForm({ value, onChange }: MawkibProfileFormProps) {
             style={styles.removeImageButton}
             onPress={() => setField("imageUrl", "")}
           >
-            <Ionicons name="trash-outline" size={16} color={colors.danger} />
             <Text style={styles.removeImageText}>حذف تصویر</Text>
+            <Ionicons name="trash-outline" size={16} color={colors.danger} />
           </Pressable>
         ) : null}
       </View>
@@ -614,12 +632,12 @@ export function MawkibProfileForm({ value, onChange }: MawkibProfileFormProps) {
 const styles = StyleSheet.create({
   form: {
     width: "100%",
-    direction: "rtl",
     alignItems: "stretch",
     gap: spacing.xs,
   },
   sectionTitle: {
     ...formTypography.heading,
+    width: "100%",
     color: colors.primaryDark,
     textAlign: "right",
     writingDirection: "rtl",
@@ -628,25 +646,25 @@ const styles = StyleSheet.create({
   },
   field: {
     width: "100%",
-    direction: "rtl",
+    alignItems: "stretch",
     marginBottom: spacing.md,
   },
   label: {
     ...formTypography.label,
+    width: "100%",
     color: colors.text,
     textAlign: "right",
     writingDirection: "rtl",
     marginBottom: spacing.xs,
   },
   chipRow: {
-    direction: "rtl",
-    flexDirection: "row",
+    width: "100%",
+    flexDirection: "row-reverse",
     flexWrap: "wrap",
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
   chip: {
-    direction: "rtl",
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
@@ -664,6 +682,7 @@ const styles = StyleSheet.create({
   chipText: {
     ...formTypography.caption,
     color: colors.textMuted,
+    textAlign: "right",
   },
   chipTextSelected: {
     color: colors.primaryDark,
@@ -690,10 +709,10 @@ const styles = StyleSheet.create({
   imagePlaceholderText: {
     ...formTypography.caption,
     color: colors.textMuted,
+    textAlign: "center",
   },
   imageActions: {
-    direction: "rtl",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
@@ -712,9 +731,10 @@ const styles = StyleSheet.create({
   imageActionText: {
     ...formTypography.caption,
     color: colors.primaryDark,
+    textAlign: "center",
   },
   removeImageButton: {
-    alignSelf: "flex-start",
+    alignSelf: "flex-end",
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
@@ -723,5 +743,6 @@ const styles = StyleSheet.create({
   removeImageText: {
     ...formTypography.caption,
     color: colors.danger,
+    textAlign: "right",
   },
 });
