@@ -81,7 +81,12 @@ const styles = StyleSheet.create({
 
 function createMainTabPressListener(
   router: ReturnType<typeof useRouter>,
-  path: "/(tabs)/dashboard" | "/(tabs)/pilgrims" | "/(tabs)/reservations",
+  path:
+    | "/(tabs)/dashboard"
+    | "/(tabs)/pilgrims"
+    | "/(tabs)/reservations"
+    | "/(tabs)/attendance"
+    | "/(tabs)/meals",
 ) {
   return {
     tabPress: (event: { preventDefault: () => void }) => {
@@ -149,6 +154,7 @@ export default function TabLayout() {
       {/* در موتور LTR، ترتیب اعلان برعکس می‌شود تا راست‌ترین آیتم رزرو باشد */}
       <Tabs.Screen
         name="meals"
+        listeners={createMainTabPressListener(router, "/(tabs)/meals")}
         options={{
           title: "وعده غذایی",
           tabBarIcon: ({ color, focused }) => (
@@ -158,6 +164,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="attendance"
+        listeners={createMainTabPressListener(router, "/(tabs)/attendance")}
         options={{
           title: "ورود و خروج",
           tabBarIcon: ({ color, focused }) => (
@@ -206,7 +213,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           href: null,
-          title: "پروفایل",
+          title: "حساب کاربری",
         }}
       />
       <Tabs.Screen

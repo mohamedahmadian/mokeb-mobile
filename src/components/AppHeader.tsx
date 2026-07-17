@@ -14,6 +14,8 @@ type AppHeaderProps = {
   showProfile?: boolean;
   /** لوگوی پروژه — داشبورد و صفحات لیست */
   showLogo?: boolean;
+  /** دکمه یا اسلات سمت چپ هدر (مثلاً فیلتر) */
+  leftAction?: React.ReactNode;
 };
 
 function HeaderLogo() {
@@ -34,6 +36,7 @@ export function AppHeader({
   onBack,
   showProfile = false,
   showLogo = false,
+  leftAction,
 }: AppHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -47,7 +50,9 @@ export function AppHeader({
       : null,
   );
 
-  const leftSlot = showProfile ? (
+  const leftSlot = leftAction ? (
+    leftAction
+  ) : showProfile ? (
     <Pressable
       onPress={() => router.push("/(tabs)/profile")}
       style={({ pressed }) => [
@@ -55,7 +60,7 @@ export function AppHeader({
         pressed && styles.iconButtonPressed,
       ]}
       accessibilityRole="button"
-      accessibilityLabel="پروفایل کاربر"
+      accessibilityLabel="حساب کاربری"
     >
       <Ionicons name="people" size={22} color={colors.text} />
     </Pressable>

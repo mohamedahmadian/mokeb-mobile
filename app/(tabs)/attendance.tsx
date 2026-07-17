@@ -23,6 +23,7 @@ import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
 import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
+import { useTabRefresh } from "@/src/hooks/useTabRefresh";
 import { exportAttendanceToExcel } from "@/src/lib/attendance-export";
 import { todayDateStringInAppTz } from "@/src/lib/date-only";
 import { presenceStateLabel } from "@/src/lib/labels";
@@ -269,6 +270,21 @@ export default function AttendanceScreen() {
     setSelectedMawkibId(null);
     setActiveView("menu");
   };
+
+  useTabRefresh({
+    onReset: () => {
+      setQuery("");
+      setSelectedMawkibId(null);
+      setActiveView("menu");
+    },
+    onRefresh: () => {
+      void queryClient.invalidateQueries({ queryKey: ["attendance-lookup"] });
+      void queryClient.invalidateQueries({ queryKey: ["attendance-present"] });
+      void queryClient.invalidateQueries({ queryKey: ["attendance-absent"] });
+      void queryClient.invalidateQueries({ queryKey: ["attendance-group-today"] });
+      void queryClient.invalidateQueries({ queryKey: ["mawkibs"] });
+    },
+  });
 
   const confirmBulkAttendance = (action: BulkAttendanceAction) => {
     if (!selectedMawkibId) {

@@ -44,6 +44,13 @@ import type { MealType, UserGender } from "@/src/types";
 
 const MEAL_TYPES: MealType[] = ["Breakfast", "Lunch", "Dinner"];
 
+type MealDeliveryViewProps = {
+  initialDate?: string;
+  initialMealType?: MealType;
+  initialMawkibId?: number;
+  autoShowList?: boolean;
+};
+
 type AppliedParams = {
   mawkibId: number;
   date: string;
@@ -74,18 +81,21 @@ function StatCounter({
   icon,
   accent,
   soft,
+  mealHint,
 }: {
   label: string;
   count: number;
   icon: keyof typeof Ionicons.glyphMap;
   accent: string;
   soft: string;
+  mealHint?: string;
 }) {
   return (
     <View style={[styles.statCard, { backgroundColor: soft }]}>
       <Ionicons name={icon} size={18} color={accent} />
       <Text style={styles.statCount}>{formatPersianNumber(count)}</Text>
       <Text style={styles.statLabel}>{label}</Text>
+      {mealHint ? <Text style={styles.statMealHint}>{mealHint}</Text> : null}
     </View>
   );
 }
@@ -127,6 +137,7 @@ function MealDeliveryRow({
             placeholder="۱"
             placeholderTextColor={colors.textSubtle}
             textAlign="center"
+            selectTextOnFocus
             onChangeText={onGuestCountChange}
             onBlur={() => {
               if (skipBlurCommitRef.current) {
@@ -174,14 +185,26 @@ function MealDeliveryRow({
   );
 }
 
-export function MealDeliveryView() {
+export function MealDeliveryView({
+  initialDate,
+  initialMealType,
+  initialMawkibId,
+  autoShowList = false,
+}: MealDeliveryViewProps = {}) {
   const { ownerId } = useAuth();
   const queryClient = useQueryClient();
   const today = todayDateStringInAppTz();
+  const autoShowDoneRef = useRef(false);
 
-  const [selectedMawkibId, setSelectedMawkibId] = useState<number | null>(null);
-  const [datePersian, setDatePersian] = useState(formatPersianDate(today));
-  const [selectedMealType, setSelectedMealType] = useState<MealType>("Lunch");
+  const [selectedMawkibId, setSelectedMawkibId] = useState<number | null>(
+    initialMawkibId ?? null,
+  );
+  const [datePersian, setDatePersian] = useState(
+    initialDate ? formatPersianDate(initialDate) : formatPersianDate(today),
+  );
+  const [selectedMealType, setSelectedMealType] = useState<MealType>(
+    initialMealType ?? "Lunch",
+  );
   const [appliedParams, setAppliedParams] = useState<AppliedParams | null>(
     null,
   );
@@ -202,10 +225,43 @@ export function MealDeliveryView() {
 
   useEffect(() => {
     if (selectedMawkibId != null) return;
+    if (initialMawkibId != null) {
+      setSelectedMawkibId(initialMawkibId);
+      return;
+    }
     if (mawkibs.length === 1) {
       setSelectedMawkibId(mawkibs[0].id);
     }
-  }, [mawkibs, selectedMawkibId]);
+  }, [initialMawkibId, mawkibs, selectedMawkibId]);
+
+  useEffect(() => {
+    if (!autoShowList || autoShowDoneRef.current || !ownerId) return;
+
+    const mawkibId =
+      initialMawkibId ??
+      selectedMawkibId ??
+      (mawkibs.length === 1 ? mawkibs[0].id : null);
+    if (!mawkibId || !initialDate) return;
+
+    const mealType = initialMealType ?? "Lunch";
+    autoShowDoneRef.current = true;
+    setSelectedMawkibId(mawkibId);
+    setDatePersian(formatPersianDate(initialDate));
+    setSelectedMealType(mealType);
+    setAppliedParams({
+      mawkibId,
+      date: initialDate,
+      mealType,
+    });
+  }, [
+    autoShowList,
+    initialDate,
+    initialMealType,
+    initialMawkibId,
+    mawkibs,
+    ownerId,
+    selectedMawkibId,
+  ]);
 
   const deliveryQuery = useQuery({
     queryKey: [
@@ -387,7 +443,7 @@ export function MealDeliveryView() {
       </View>
 
       <PrimaryButton
-        label="نمایش لیست"
+        label={`نمایش لیست ${mealTypeLabel[selectedMealType]}`}
         icon="list-outline"
         onPress={handleShowList}
         disabled={!selectedMawkibId}
@@ -402,6 +458,7 @@ export function MealDeliveryView() {
               icon="restaurant-outline"
               accent={colors.primaryDark}
               soft={colors.primaryLight}
+              mealHint={mealTypeLabel[appliedParams.mealType]}
             />
             <StatCounter
               label="تحویل شده"
@@ -409,6 +466,7 @@ export function MealDeliveryView() {
               icon="checkmark-circle-outline"
               accent={colors.success}
               soft={colors.successLight}
+              mealHint={mealTypeLabel[appliedParams.mealType]}
             />
             <StatCounter
               label="عدم تحویل"
@@ -416,49 +474,52 @@ export function MealDeliveryView() {
               icon="time-outline"
               accent={colors.warning}
               soft={colors.warningLight}
+              mealHint={mealTypeLabel[appliedParams.mealType]}
             />
           </View>
 
-          <SearchBarStickyWrap>
-            <SearchBar
-              value={query}
-              onChangeText={setQuery}
-              placeholder="تلفن همراه یا نام و نام خانوادگی"
-              flushRight
-            />
-          </SearchBarStickyWrap>
+          <View style={styles.filtersGroup}>
+            <SearchBarStickyWrap>
+              <SearchBar
+                value={query}
+                onChangeText={setQuery}
+                placeholder="تلفن همراه یا نام و نام خانوادگی"
+                flushRight
+              />
+            </SearchBarStickyWrap>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>جنسیت</Text>
-            <View style={styles.genderRow}>
-              {(
-                [
-                  ["", "همه"],
-                  ["Male", "مرد"],
-                  ["Female", "زن"],
-                ] as const
-              ).map(([value, label]) => {
-                const selected = gender === value;
-                return (
-                  <Pressable
-                    key={value || "all"}
-                    style={[
-                      styles.genderButton,
-                      selected && styles.genderButtonSelected,
-                    ]}
-                    onPress={() => setGender(value as UserGender | "")}
-                  >
-                    <Text
+            <View style={styles.genderSection}>
+              <Text style={styles.sectionTitle}>جنسیت</Text>
+              <View style={styles.genderRow}>
+                {(
+                  [
+                    ["", "همه"],
+                    ["Male", "مرد"],
+                    ["Female", "زن"],
+                  ] as const
+                ).map(([value, label]) => {
+                  const selected = gender === value;
+                  return (
+                    <Pressable
+                      key={value || "all"}
                       style={[
-                        styles.genderText,
-                        selected && styles.genderTextSelected,
+                        styles.genderButton,
+                        selected && styles.genderButtonSelected,
                       ]}
+                      onPress={() => setGender(value as UserGender | "")}
                     >
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        style={[
+                          styles.genderText,
+                          selected && styles.genderTextSelected,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           </View>
 
@@ -562,6 +623,21 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: "center",
     fontSize: 11,
+  },
+  statMealHint: {
+    ...formTypography.caption,
+    color: colors.textSubtle,
+    textAlign: "center",
+    fontSize: 9,
+    marginTop: 1,
+  },
+  filtersGroup: {
+    width: "100%",
+    gap: spacing.xs,
+  },
+  genderSection: {
+    width: "100%",
+    gap: spacing.xs,
   },
   genderRow: {
     flexDirection: "row-reverse",

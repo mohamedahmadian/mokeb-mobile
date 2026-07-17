@@ -18,6 +18,7 @@ import {
 import { Text, fontFamilies } from "@/src/lib/fonts";
 import { PrimaryButton } from "@/src/components/ui";
 import { useAppBackHandler } from "@/src/hooks/useAppBackHandler";
+import { useBottomSheetPadding } from "@/src/hooks/useBottomSheetInsets";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
 
 export type AlertButton = {
@@ -152,6 +153,8 @@ function ActionSheet({
     !!state,
   );
 
+  const bottomPadding = useBottomSheetPadding();
+
   if (!state) return null;
 
   const handlePress = (button: AlertButton) => {
@@ -169,7 +172,7 @@ function ActionSheet({
     >
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         <Pressable
-          style={styles.sheetCard}
+          style={[styles.sheetCard, { paddingBottom: bottomPadding }]}
           onPress={(event) => event.stopPropagation()}
         >
           <View style={styles.sheetHandle} />
@@ -363,7 +366,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.xxl,
     paddingHorizontal: spacing.lg,
     borderTopWidth: 1,
     borderColor: colors.borderLight,

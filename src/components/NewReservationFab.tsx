@@ -23,6 +23,7 @@ import { colors, radius, spacing, typography } from "@/src/lib/theme";
 const FAB_SIZE = 58;
 const TAB_BAR_HEIGHT = 68;
 const DRAG_ACTIVATION_DISTANCE = 8;
+const MENU_ITEM_WIDTH = 162;
 
 type FabPosition = { x: number; y: number };
 
@@ -131,15 +132,15 @@ export function NewReservationFab({
     },
     {
       key: "search",
-      label: "جستجوی زائر",
+      label: "جستجوی رزرو",
       icon: "search",
       onPress: () =>
         run(() =>
           router.push({
-            pathname: "/(tabs)/pilgrims",
+            pathname: "/(tabs)/reservations",
             params: {
-              pilgrimAction: "search",
-              pilgrimRequestId: requestId(),
+              reservationAction: "search",
+              reservationRequestId: requestId(),
             },
           }),
         ),
@@ -197,6 +198,50 @@ export function NewReservationFab({
     outputRange: ["0deg", "45deg"],
   });
 
+  const renderMenuItem = (item: MenuItem, index: number) => {
+    const fromEnd = items.length - 1 - index;
+    const translateY = progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [12 + fromEnd * 8, 0],
+    });
+    const opacity = progress.interpolate({
+      inputRange: [0, 0.35, 1],
+      outputRange: [0, 0, 1],
+    });
+    const scale = progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.86, 1],
+    });
+
+    return (
+      <Animated.View
+        key={item.key}
+        style={[
+          styles.menuItem,
+          {
+            opacity,
+            transform: [{ translateY }, { scale }],
+          },
+        ]}
+      >
+        <Pressable
+          onPress={item.onPress}
+          style={({ pressed }) => [
+            styles.menuItemButton,
+            pressed && styles.pressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={item.label}
+        >
+          <Text style={styles.menuItemLabel}>{item.label}</Text>
+          <View style={styles.menuItemIcon}>
+            <Ionicons name={item.icon} size={18} color={colors.primaryDark} />
+          </View>
+        </Pressable>
+      </Animated.View>
+    );
+  };
+
   return (
     <>
       <Modal
@@ -208,6 +253,25 @@ export function NewReservationFab({
       >
         <View style={styles.modalRoot} pointerEvents="box-none">
           <Pressable style={styles.backdrop} onPress={close} />
+          <View
+            style={[
+              styles.menuBlock,
+              {
+                left: menuPosition.x,
+                bottom: screenHeight - menuPosition.y - FAB_SIZE,
+              },
+            ]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.upperItems}>
+              {items.slice(0, 2).map((item, index) => renderMenuItem(item, index))}
+            </View>
+            <View style={styles.bottomRow}>
+              <View style={styles.fabSpacer} />
+              {renderMenuItem(items[2], 2)}
+            </View>
+          </View>
+
           <View
             style={[
               styles.menuAnchor,
@@ -229,56 +293,6 @@ export function NewReservationFab({
                 <Ionicons name="add" size={28} color="#fff" />
               </Animated.View>
             </Pressable>
-
-            <View style={styles.menuColumn} pointerEvents="box-none">
-              {items.map((item, index) => {
-                const fromEnd = items.length - 1 - index;
-                const translateY = progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [12 + fromEnd * 8, 0],
-                });
-                const opacity = progress.interpolate({
-                  inputRange: [0, 0.35, 1],
-                  outputRange: [0, 0, 1],
-                });
-                const scale = progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.86, 1],
-                });
-
-                return (
-                  <Animated.View
-                    key={item.key}
-                    style={[
-                      styles.menuItem,
-                      {
-                        opacity,
-                        transform: [{ translateY }, { scale }],
-                      },
-                    ]}
-                  >
-                    <Pressable
-                      onPress={item.onPress}
-                      style={({ pressed }) => [
-                        styles.menuItemButton,
-                        pressed && styles.pressed,
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.label}
-                    >
-                      <View style={styles.menuItemIcon}>
-                        <Ionicons
-                          name={item.icon}
-                          size={20}
-                          color={colors.primaryDark}
-                        />
-                      </View>
-                      <Text style={styles.menuItemLabel}>{item.label}</Text>
-                    </Pressable>
-                  </Animated.View>
-                );
-              })}
-            </View>
           </View>
         </View>
       </Modal>
@@ -314,23 +328,37 @@ const styles = StyleSheet.create({
     width: FAB_SIZE,
     height: FAB_SIZE,
   },
-  menuColumn: {
+  menuBlock: {
     position: "absolute",
-    left: 0,
-    bottom: FAB_SIZE + spacing.sm,
-    alignItems: "flex-start",
+    zIndex: 11,
+  },
+  upperItems: {
+    marginLeft: FAB_SIZE + spacing.sm,
+    width: MENU_ITEM_WIDTH,
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
   },
+  fabSpacer: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+  },
   menuItem: {
-    alignItems: "flex-start",
+    width: MENU_ITEM_WIDTH,
   },
   menuItemButton: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    width: MENU_ITEM_WIDTH,
     gap: spacing.sm,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
@@ -341,21 +369,23 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
   },
   menuItemIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.primaryLight,
+    flexShrink: 0,
   },
   menuItemLabel: {
     ...typography.label,
     color: colors.primaryDark,
     fontSize: 14,
     fontWeight: "600",
+    lineHeight: 20,
     textAlign: "right",
     writingDirection: "rtl",
-    minWidth: 96,
+    flexShrink: 0,
   },
   fab: {
     width: FAB_SIZE,

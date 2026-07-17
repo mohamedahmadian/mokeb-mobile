@@ -12,35 +12,71 @@ import {
   ScreenContainer,
   ScreenScroll,
   SearchBar,
-  SearchBarStickyWrap,
 } from "@/src/components/ui";
 import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
 import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
+import { useTabRefresh } from "@/src/hooks/useTabRefresh";
 import { colors, spacing } from "@/src/lib/theme";
 import { lookupReservation } from "@/src/services/reservations";
 
+import type { MealType } from "@/src/types";
+
 type MealsView = "menu" | "search" | "delivery";
+
+const MEAL_TYPE_VALUES: MealType[] = ["Breakfast", "Lunch", "Dinner"];
+
+function parseMealTypeParam(value?: string): MealType | undefined {
+  if (!value) return undefined;
+  return MEAL_TYPE_VALUES.includes(value as MealType)
+    ? (value as MealType)
+    : undefined;
+}
 
 export default function MealsScreen() {
   const { ownerId } = useAuth();
   const router = useRouter();
-  const { mealsView, mealsQuery, mealsRequestId } = useLocalSearchParams<{
+  const {
+    mealsView,
+    mealsQuery,
+    mealsRequestId,
+    deliveryDate,
+    deliveryMealType,
+    deliveryMawkibId,
+    returnTo,
+    mealReportReturnTo,
+    mealReportMawkibId,
+  } = useLocalSearchParams<{
     mealsView?: MealsView;
     mealsQuery?: string;
     mealsRequestId?: string;
+    deliveryDate?: string;
+    deliveryMealType?: string;
+    deliveryMawkibId?: string;
+    returnTo?: "meal-report";
+    mealReportReturnTo?: "meals" | "dashboard";
+    mealReportMawkibId?: string;
   }>();
   const handledRequestId = useRef<string | undefined>(undefined);
   const [activeView, setActiveView] = useState<MealsView>("menu");
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query.trim());
+  const deliveryMawkibIdNumber = deliveryMawkibId
+    ? Number(deliveryMawkibId)
+    : undefined;
+  const parsedDeliveryMealType = parseMealTypeParam(deliveryMealType);
 
   useEffect(() => {
     if (!mealsRequestId || handledRequestId.current === mealsRequestId) {
       return;
     }
     handledRequestId.current = mealsRequestId;
+    if (mealsView === "delivery") {
+      setActiveView("delivery");
+      setQuery("");
+      return;
+    }
     if (mealsView === "search" || mealsQuery) {
       setActiveView("search");
       setQuery(mealsQuery ?? "");
@@ -79,9 +115,29 @@ export default function MealsScreen() {
   };
 
   const closeView = () => {
+    if (returnTo === "meal-report") {
+      router.navigate({
+        pathname: "/menu/meal-report",
+        params: {
+          returnTo: mealReportReturnTo === "dashboard" ? "dashboard" : "meals",
+          ...(mealReportMawkibId ? { mawkibId: mealReportMawkibId } : {}),
+        },
+      });
+      return;
+    }
     setQuery("");
     setActiveView("menu");
   };
+
+  useTabRefresh({
+    onReset: () => {
+      setQuery("");
+      setActiveView("menu");
+    },
+    onRefresh: () => {
+      void lookupQuery.refetch();
+    },
+  });
 
   return (
     <ScreenContainer>
@@ -94,10 +150,22 @@ export default function MealsScreen() {
         showLogo
       />
 
+      {activeView === "search" ? (
+        <View style={styles.searchToolbar}>
+          <SearchBar
+            value={query}
+            onChangeText={setQuery}
+            placeholder="نام و نام خانوادگی، کد رزرو، موبایل یا کد ملی"
+            autoFocus
+            flushRight
+          />
+        </View>
+      ) : null}
+
       <ScreenScroll
+        key={activeView}
         contentContainerStyle={styles.content}
         keyboardDismissMode="on-drag"
-        stickyHeaderIndices={activeView === "search" ? [0] : undefined}
         refreshControl={
           activeView === "search" ? (
             <RefreshControl
@@ -125,25 +193,31 @@ export default function MealsScreen() {
               onPress={() => openView("delivery")}
             />
             <ListCard
-              title="گزارش وعده غذایی"
+              title="گزارش تحویل غذا"
               titleIcon="pie-chart-outline"
-              subtitle="نمودار تحویل وعده به‌ازای هر روز"
-              onPress={() => router.push("/menu/meal-report")}
+              subtitle="گزارش تحویل غذا به‌ازای هر روز"
+              onPress={() =>
+                router.push({
+                  pathname: "/menu/meal-report",
+                  params: { returnTo: "meals" },
+                })
+              }
             />
           </View>
         ) : activeView === "delivery" ? (
-          <MealDeliveryView />
-        ) : (
-          <SearchBarStickyWrap>
-            <SearchBar
-              value={query}
-              onChangeText={setQuery}
-              placeholder="نام و نام خانوادگی، کد رزرو، موبایل یا کد ملی"
-              autoFocus
-              flushRight
-            />
-          </SearchBarStickyWrap>
-        )}
+          <MealDeliveryView
+            key={mealsRequestId ?? "delivery-default"}
+            initialDate={deliveryDate}
+            initialMealType={parsedDeliveryMealType}
+            initialMawkibId={
+              deliveryMawkibIdNumber != null &&
+              Number.isFinite(deliveryMawkibIdNumber)
+                ? deliveryMawkibIdNumber
+                : undefined
+            }
+            autoShowList={!!deliveryDate}
+          />
+        ) : null}
 
         {activeView === "search" ? (
           <>
@@ -183,6 +257,13 @@ export default function MealsScreen() {
 }
 
 const styles = StyleSheet.create({
+  searchToolbar: {
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
   content: {
     width: "100%",
     alignItems: "stretch",

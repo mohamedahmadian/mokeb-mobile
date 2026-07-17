@@ -145,6 +145,7 @@ export function PilgrimCard({ details, style }: PilgrimCardProps) {
     reservation.reservationDate,
     reservation.reservationEndDate,
   );
+  const mawkibName = details.mawkibName?.trim() || "—";
   const mawkibAddress = details.mawkibAddress?.trim() || "—";
   const neshanAddress = details.neshanAddressUrl?.trim() || "—";
   const ownerName = details.ownerName?.trim() || "—";
@@ -158,6 +159,8 @@ export function PilgrimCard({ details, style }: PilgrimCardProps) {
         details.mawkibLongitude!,
       )
     : null;
+  const locationScanValue =
+    details.neshanAddressUrl?.trim() || locationGeoUrl || null;
   const heroSource =
     details.mawkibImageUrl?.trim() &&
     /^(https?:\/\/|file:\/\/)/i.test(details.mawkibImageUrl.trim())
@@ -227,9 +230,15 @@ export function PilgrimCard({ details, style }: PilgrimCardProps) {
               imageStyle={styles.heroImageInner}
             >
               <View style={styles.heroOverlay}>
-                <Text style={styles.heroTitle} numberOfLines={2}>
-                  {details.pilgrimName}
+                <Text style={styles.heroMawkibName} numberOfLines={2}>
+                  {mawkibName}
                 </Text>
+                <View style={styles.heroPilgrimBadge}>
+                  <Ionicons name="person-outline" size={12} color="#fff" />
+                  <Text style={styles.heroPilgrimName} numberOfLines={1}>
+                    {details.pilgrimName}
+                  </Text>
+                </View>
               </View>
             </ImageBackground>
           </View>
@@ -283,11 +292,15 @@ export function PilgrimCard({ details, style }: PilgrimCardProps) {
             value={neshanAddress}
           />
 
-          {locationGeoUrl ? (
+          {locationScanValue ? (
             <View style={styles.locationBlock}>
+              <Text style={styles.locationTitle}>موقعیت موکب</Text>
               <View style={styles.locationQrWrap}>
-                <QRCode value={locationGeoUrl} size={72} color={CARD_TEAL} />
+                <QRCode value={locationScanValue} size={72} color={CARD_TEAL} />
               </View>
+              <Text style={styles.locationCaption}>
+                اسکن برای باز کردن نقشه (اسنپ، نشان و ...)
+              </Text>
             </View>
           ) : null}
         </View>
@@ -361,14 +374,32 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 6,
   },
-  heroTitle: {
+  heroMawkibName: {
     width: "100%",
     color: "#fff",
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "800",
     textAlign: "right",
     writingDirection: "rtl",
     paddingRight: 4,
+  },
+  heroPilgrimBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-end",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+  },
+  heroPilgrimName: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
+    writingDirection: "rtl",
+    maxWidth: "100%",
   },
   headerQr: {
     flex: 1,
@@ -542,10 +573,25 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "rgba(26, 63, 63, 0.12)",
+    gap: 6,
+  },
+  locationTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: CARD_TEAL,
+    textAlign: "center",
+    writingDirection: "rtl",
   },
   locationQrWrap: {
     backgroundColor: "#fff",
     padding: 8,
     borderRadius: 10,
+  },
+  locationCaption: {
+    fontSize: 9,
+    color: "#64748b",
+    textAlign: "center",
+    writingDirection: "rtl",
+    paddingHorizontal: 8,
   },
 });

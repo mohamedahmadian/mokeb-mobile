@@ -317,7 +317,11 @@ export default function DashboardScreen() {
                 icon: "document-text" as const,
                 tint: "#e2e8f0",
                 iconColor: "#475569",
-                onPress: () => openTab("/menu/meal-report"),
+                onPress: () =>
+                  router.push({
+                    pathname: "/menu/meal-report",
+                    params: { returnTo: "dashboard" },
+                  }),
               },
             ]
           : []),

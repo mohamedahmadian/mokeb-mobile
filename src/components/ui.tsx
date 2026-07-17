@@ -19,6 +19,7 @@ import type {
   ViewStyle,
 } from "react-native";
 import { Text, TextInput } from "@/src/lib/fonts";
+import { formatPersianNumber } from "@/src/lib/persianDate";
 import {
   colors,
   formTypography,
@@ -26,6 +27,50 @@ import {
   spacing,
   typography,
 } from "@/src/lib/theme";
+
+type GuestCountSummaryProps = {
+  male: number;
+  female: number;
+};
+
+const guestCountColors = {
+  male: "#3b82f6",
+  female: "#ec4899",
+} as const;
+
+export function GuestCountSummary({ male, female }: GuestCountSummaryProps) {
+  const total = male + female;
+
+  return (
+    <View style={styles.guestCountWrap}>
+      <View style={styles.guestCountPart}>
+        <Text style={[styles.guestCountText, styles.guestCountMale]}>
+          {formatPersianNumber(male)}
+        </Text>
+        <Ionicons
+          name="man-outline"
+          size={16}
+          color={guestCountColors.male}
+        />
+      </View>
+      <View style={styles.guestCountPart}>
+        <Text style={[styles.guestCountText, styles.guestCountFemale]}>
+          {formatPersianNumber(female)}
+        </Text>
+        <Ionicons
+          name="woman-outline"
+          size={16}
+          color={guestCountColors.female}
+        />
+      </View>
+      {total > 0 ? (
+        <Text style={styles.guestCountTotal}>
+          ({formatPersianNumber(total)})
+        </Text>
+      ) : null}
+    </View>
+  );
+}
 
 type ScreenContainerProps = {
   children: React.ReactNode;
@@ -72,6 +117,8 @@ type SearchBarProps = {
   onChangeText: (value: string) => void;
   placeholder?: string;
   onSubmit?: () => void;
+  /** آیکن جستجو در انتهای کادر — با کلیک جستجو انجام می‌شود */
+  onSearchPress?: () => void;
   autoFocus?: boolean;
   /** بدون حاشیه افقی — برای قرارگیری کنار شمارنده */
   embedded?: boolean;
@@ -79,11 +126,48 @@ type SearchBarProps = {
   flushRight?: boolean;
 };
 
+type ToolbarIconButtonProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  accessibilityLabel: string;
+  active?: boolean;
+  showBadge?: boolean;
+};
+
+export function ToolbarIconButton({
+  icon,
+  onPress,
+  accessibilityLabel,
+  active = false,
+  showBadge = false,
+}: ToolbarIconButtonProps) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.toolbarIconButton,
+        active && styles.toolbarIconButtonActive,
+        pressed && styles.toolbarIconButtonPressed,
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <Ionicons
+        name={icon}
+        size={22}
+        color={active ? colors.primaryDark : colors.textMuted}
+      />
+      {showBadge ? <View style={styles.toolbarIconBadge} /> : null}
+    </Pressable>
+  );
+}
+
 export const SearchBar = memo(function SearchBar({
   value,
   onChangeText,
   placeholder = "جستجو...",
   onSubmit,
+  onSearchPress,
   autoFocus = false,
   embedded = false,
   flushRight = false,
@@ -110,33 +194,71 @@ export const SearchBar = memo(function SearchBar({
     }, [autoFocus, scheduleFocus]),
   );
 
+  const handleSubmit = onSearchPress ?? onSubmit;
+
   return (
     <View
       style={[
         styles.searchWrap,
         embedded && styles.searchWrapEmbedded,
         flushRight && styles.searchWrapFlushRight,
+        onSearchPress && styles.searchWrapTrailingIcon,
       ]}
       collapsable={false}
     >
-      <Ionicons name="search" size={18} color={colors.textSubtle} />
-      <TextInput
-        ref={inputRef}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textSubtle}
-        style={styles.searchInput}
-        textAlign="right"
-        returnKeyType="search"
-        blurOnSubmit={false}
-        autoCorrect={false}
-        autoCapitalize="none"
-        autoFocus={autoFocus}
-        underlineColorAndroid="transparent"
-        importantForAutofill="no"
-        onSubmitEditing={onSubmit}
-      />
+      {onSearchPress ? (
+        <>
+          <TextInput
+            ref={inputRef}
+            value={value}
+            onChangeText={onChangeText}
+            placeholder={placeholder}
+            placeholderTextColor={colors.textSubtle}
+            style={styles.searchInput}
+            textAlign="right"
+            returnKeyType="search"
+            blurOnSubmit={false}
+            autoCorrect={false}
+            autoCapitalize="none"
+            autoFocus={autoFocus}
+            underlineColorAndroid="transparent"
+            importantForAutofill="no"
+            onSubmitEditing={handleSubmit}
+          />
+          <Pressable
+            onPress={onSearchPress}
+            style={({ pressed }) => [
+              styles.searchTrailingButton,
+              pressed && styles.searchTrailingButtonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="جستجو"
+          >
+            <Ionicons name="search" size={18} color={colors.primary} />
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <Ionicons name="search" size={18} color={colors.textSubtle} />
+          <TextInput
+            ref={inputRef}
+            value={value}
+            onChangeText={onChangeText}
+            placeholder={placeholder}
+            placeholderTextColor={colors.textSubtle}
+            style={styles.searchInput}
+            textAlign="right"
+            returnKeyType="search"
+            blurOnSubmit={false}
+            autoCorrect={false}
+            autoCapitalize="none"
+            autoFocus={autoFocus}
+            underlineColorAndroid="transparent"
+            importantForAutofill="no"
+            onSubmitEditing={handleSubmit}
+          />
+        </>
+      )}
     </View>
   );
 });
@@ -440,6 +562,7 @@ type ListCardProps = {
   badgeCaption?: string;
   badgeColor?: string;
   badgeTextColor?: string;
+  guestCounts?: GuestCountSummaryProps;
   footer?: React.ReactNode;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
@@ -455,6 +578,7 @@ export function ListCard({
   badgeCaption,
   badgeColor = colors.primaryLight,
   badgeTextColor = colors.primaryDark,
+  guestCounts,
   footer,
   onPress,
   style,
@@ -469,19 +593,29 @@ export function ListCard({
         pressed && onPress ? styles.cardPressed : null,
       ]}
     >
+      {guestCounts || badgeCaption ? (
+        <View style={styles.cardHeaderTop}>
+          {badgeCaption ? (
+            <Text style={styles.badgeCaption}>{badgeCaption}</Text>
+          ) : (
+            <View style={styles.headerSpacer} />
+          )}
+          {guestCounts ? (
+            <GuestCountSummary
+              male={guestCounts.male}
+              female={guestCounts.female}
+            />
+          ) : null}
+        </View>
+      ) : null}
       <View style={styles.cardHeader}>
-        {badge || badgeCaption ? (
+        {badge ? (
           <View style={styles.badgeColumn}>
-            {badgeCaption ? (
-              <Text style={styles.badgeCaption}>{badgeCaption}</Text>
-            ) : null}
-            {badge ? (
-              <View style={[styles.badge, { backgroundColor: badgeColor }]}>
-                <Text style={[styles.badgeText, { color: badgeTextColor }]}>
-                  {badge}
-                </Text>
-              </View>
-            ) : null}
+            <View style={[styles.badge, { backgroundColor: badgeColor }]}>
+              <Text style={[styles.badgeText, { color: badgeTextColor }]}>
+                {badge}
+              </Text>
+            </View>
           </View>
         ) : (
           <View style={styles.headerSpacer} />
@@ -567,6 +701,47 @@ const styles = StyleSheet.create({
   searchWrapFlushRight: {
     marginRight: 0,
   },
+  searchWrapTrailingIcon: {
+    flexDirection: "row-reverse",
+    paddingLeft: spacing.xs,
+  },
+  searchTrailingButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchTrailingButtonPressed: {
+    opacity: 0.75,
+    backgroundColor: colors.borderLight,
+  },
+  toolbarIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toolbarIconButtonActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  toolbarIconButtonPressed: {
+    opacity: 0.88,
+  },
+  toolbarIconBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
   searchStickyWrap: {
     width: "100%",
     alignSelf: "stretch",
@@ -576,7 +751,7 @@ const styles = StyleSheet.create({
   },
   searchRow: {
     width: "100%",
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     alignItems: "center",
     flexWrap: "nowrap",
     gap: spacing.sm,
@@ -788,6 +963,42 @@ const styles = StyleSheet.create({
   },
   cardPressed: {
     backgroundColor: colors.borderLight,
+  },
+  cardHeaderTop: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  guestCountWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: spacing.xs,
+    flexShrink: 1,
+  },
+  guestCountPart: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  guestCountText: {
+    ...typography.caption,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  guestCountMale: {
+    color: guestCountColors.male,
+  },
+  guestCountFemale: {
+    color: guestCountColors.female,
+  },
+  guestCountTotal: {
+    ...typography.caption,
+    fontSize: 10,
+    color: colors.textSubtle,
   },
   // LTR engine: badge on left, title cluster on right
   cardHeader: {

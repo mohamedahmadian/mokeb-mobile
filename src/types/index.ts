@@ -230,6 +230,8 @@ export interface PilgrimListFilters {
   passportNumber?: string;
   gender?: UserGender;
   description?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export type PilgrimFilterFormState = {
@@ -266,6 +268,8 @@ export interface ReservationListFilters {
   reservationDate?: string;
   reservationEndDate?: string;
   description?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export interface MawkibListFilters {

@@ -31,6 +31,8 @@ export type MealReportDay = {
   remainingCount: number;
 };
 
+export type MealReportMealFilter = MealType | "All";
+
 const ALL_MEAL_TYPES: MealType[] = ["Breakfast", "Lunch", "Dinner"];
 
 function mapMealPlan(row: {
@@ -369,6 +371,7 @@ export async function getMealReportRange(
   mawkibId: number,
   startDate: string,
   endDate: string,
+  mealType: MealReportMealFilter = "All",
 ): Promise<{ days: MealReportDay[] }> {
   if (startDate > endDate) {
     throw new Error("بازه تاریخ نامعتبر است");
@@ -380,6 +383,12 @@ export async function getMealReportRange(
     [mawkibId, ownerUserId],
   );
   if (!mawkib) throw new Error("موکب یافت نشد");
+
+  const mealClause = mealType === "All" ? "" : "AND mp.mealType = ?";
+  const queryParams: (string | number)[] = [mawkibId, startDate, endDate];
+  if (mealType !== "All") {
+    queryParams.push(mealType);
+  }
 
   const rows = await db.getAllAsync<{
     date: string;
@@ -395,9 +404,10 @@ export async function getMealReportRange(
        AND r.status IN ('Confirmed', 'Completed')
        AND mp.date >= ?
        AND mp.date <= ?
+       ${mealClause}
      GROUP BY mp.date
      ORDER BY mp.date ASC`,
-    [mawkibId, startDate, endDate],
+    queryParams,
   );
 
   const byDate = new Map(

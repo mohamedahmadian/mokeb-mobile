@@ -1,9 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, RefreshControl, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Text } from "@/src/lib/fonts";
 import {
-  keepPreviousData,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -20,8 +28,8 @@ import {
   SearchToolbar,
   SearchToolbarField,
   StickyBottomAction,
+  ToolbarIconButton,
 } from "@/src/components/ui";
-import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { PilgrimFiltersModal } from "@/src/components/PilgrimFiltersModal";
 import {
   createUserFormData,
@@ -29,7 +37,8 @@ import {
   userFormToInput,
 } from "@/src/components/UserProfileForm";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
+import type { AlertButton } from "@/src/contexts/NotifyContext";
+import { useNotifyContext } from "@/src/contexts/NotifyContext";
 import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { useTabRefresh } from "@/src/hooks/useTabRefresh";
 import { genderLabel } from "@/src/lib/labels";
@@ -51,8 +60,21 @@ import {
 } from "@/src/services/pilgrims";
 import type { User } from "@/src/types";
 
+const PILGRIMS_PAGE_SIZE = 20;
+
+function getPilgrimsNextPageParam(
+  lastPage: User[] | undefined,
+  allPages: User[][] | undefined,
+) {
+  if (!Array.isArray(lastPage) || lastPage.length < PILGRIMS_PAGE_SIZE) {
+    return undefined;
+  }
+  return (allPages?.length ?? 0) * PILGRIMS_PAGE_SIZE;
+}
+
 export default function PilgrimsScreen() {
   const { ownerId, canDelete } = useAuth();
+  const { showActions } = useNotifyContext();
   const queryClient = useQueryClient();
   const router = useRouter();
   const { pilgrimAction, pilgrimRequestId, pilgrimId } = useLocalSearchParams<{
@@ -62,7 +84,7 @@ export default function PilgrimsScreen() {
   }>();
   const handledRequestId = useRef<string | undefined>(undefined);
   const [query, setQuery] = useState("");
-  const debouncedQuery = useDebouncedValue(query.trim());
+  const [searchQuery, setSearchQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(() => createUserFormData());
   const [editingPilgrimId, setEditingPilgrimId] = useState<number | null>(null);
@@ -100,6 +122,7 @@ export default function PilgrimsScreen() {
     } else if (pilgrimAction === "search") {
       setShowForm(false);
       setQuery("");
+      setSearchQuery("");
     } else if (pilgrimAction === "edit" && pilgrimId) {
       const id = Number(pilgrimId);
       if (Number.isFinite(id)) {
@@ -123,21 +146,57 @@ export default function PilgrimsScreen() {
     resetForm();
   };
 
+  const submitSearch = () => setSearchQuery(query.trim());
+
   const {
-    data: pilgrims = [],
-    isLoading,
-    isFetching,
+    data: pilgrimsPages,
+    isLoading: isPilgrimsLoading,
+    isFetching: isPilgrimsFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
     refetch: refetchPilgrims,
-  } = useQuery({
-    queryKey: ["pilgrims", ownerId, debouncedQuery, listFilters],
-    enabled: !!ownerId,
-    placeholderData: keepPreviousData,
-    queryFn: () =>
-      listPilgrims(ownerId!, {
-        query: debouncedQuery || undefined,
+  } = useInfiniteQuery({
+    queryKey: ["pilgrims", "infinite", ownerId, searchQuery, listFilters],
+    enabled: !!ownerId && !showForm,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
+      if (!ownerId) return Promise.resolve([]);
+      return listPilgrims(ownerId, {
+        query: searchQuery || undefined,
         ...listFilters,
-      }),
+        limit: PILGRIMS_PAGE_SIZE,
+        offset: pageParam,
+      });
+    },
+    getNextPageParam: getPilgrimsNextPageParam,
   });
+
+  const pilgrims = useMemo(
+    () => pilgrimsPages?.pages.flatMap((page) => page ?? []) ?? [],
+    [pilgrimsPages],
+  );
+
+  const loadingMoreRef = useRef(false);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!hasNextPage || isFetchingNextPage || loadingMoreRef.current) return;
+
+      const { layoutMeasurement, contentOffset, contentSize } =
+        event.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (layoutMeasurement.height + contentOffset.y);
+
+      if (distanceFromBottom < 160) {
+        loadingMoreRef.current = true;
+        void fetchNextPage().finally(() => {
+          loadingMoreRef.current = false;
+        });
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
 
   const { data: totalPilgrims = 0, refetch: refetchPilgrimCount } = useQuery({
     queryKey: ["pilgrims-count", ownerId],
@@ -226,6 +285,78 @@ export default function PilgrimsScreen() {
     setFilterModalVisible(false);
   };
 
+  const showPilgrimActions = (pilgrim: User) => {
+    const buttons: AlertButton[] = [
+      {
+        text: "تاریخچه رزروها",
+        onPress: () =>
+          router.push({
+            pathname: "/(tabs)/reservations",
+            params: {
+              reservationAction: "history",
+              pilgrimMobile: pilgrim.mobileNumber,
+              pilgrimName: pilgrim.fullName,
+              reservationRequestId: String(Date.now()),
+            },
+          }),
+      },
+      {
+        text: "رزرو",
+        onPress: () =>
+          router.push({
+            pathname: "/(tabs)/reservations",
+            params: {
+              pilgrimId: String(pilgrim.id),
+              pilgrimName: pilgrim.fullName,
+              pilgrimMobile: pilgrim.mobileNumber,
+              pilgrimGender: pilgrim.gender ?? "",
+              reservationRequestId: String(Date.now()),
+            },
+          }),
+      },
+      {
+        text: "ورود و خروج",
+        onPress: () =>
+          router.push({
+            pathname: "/(tabs)/attendance",
+            params: {
+              attendanceQuery:
+                pilgrim.mobileNumber || pilgrim.nationalId || "",
+              attendanceRequestId: String(Date.now()),
+            },
+          }),
+      },
+      {
+        text: "برنامه غذایی",
+        onPress: () =>
+          router.push({
+            pathname: "/(tabs)/meals",
+            params: {
+              mealsView: "search",
+              mealsQuery: pilgrim.mobileNumber || "",
+              mealsRequestId: String(Date.now()),
+            },
+          }),
+      },
+    ];
+
+    if (canDelete) {
+      buttons.push({
+        text: "حذف",
+        style: "destructive",
+        onPress: () => handleDeletePilgrim(pilgrim),
+      });
+    }
+
+    buttons.push({ text: "انصراف", style: "cancel" });
+
+    showActions({
+      title: pilgrim.fullName,
+      message: "سایر عملیات",
+      buttons,
+    });
+  };
+
   return (
     <ScreenContainer>
       <AppHeader
@@ -235,29 +366,23 @@ export default function PilgrimsScreen() {
         subtitle={showForm ? undefined : "مدیریت و جستجوی زائرین"}
         onBack={showForm ? closeForm : undefined}
         showLogo={!showForm}
+        leftAction={
+          !showForm ? (
+            <ToolbarIconButton
+              icon="options-outline"
+              onPress={openFilterModal}
+              accessibilityLabel="فیلتر زائرین"
+              active={hasFilters}
+              showBadge={hasFilters}
+            />
+          ) : undefined
+        }
       />
 
       {!showForm ? (
         <>
           <View style={styles.listToolbar}>
             <SearchToolbar>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.filterButton,
-                  hasFilters && styles.filterButtonActive,
-                  pressed && styles.filterButtonPressed,
-                ]}
-                onPress={openFilterModal}
-                accessibilityRole="button"
-                accessibilityLabel="فیلتر زائرین"
-              >
-                <Ionicons
-                  name="options-outline"
-                  size={22}
-                  color={hasFilters ? colors.primaryDark : colors.textMuted}
-                />
-                {hasFilters ? <View style={styles.filterBadge} /> : null}
-              </Pressable>
               <SearchToolbarField>
                 <SearchBar
                   value={query}
@@ -265,14 +390,22 @@ export default function PilgrimsScreen() {
                   placeholder="نام، موبایل یا کد ملی"
                   autoFocus
                   embedded
+                  onSearchPress={submitSearch}
                 />
               </SearchToolbarField>
+              <ToolbarIconButton
+                icon="add"
+                onPress={openNewPilgrim}
+                accessibilityLabel="زائر جدید"
+              />
             </SearchToolbar>
           </View>
 
           <ScreenScroll
             contentContainerStyle={styles.listContent}
             keyboardDismissMode="on-drag"
+            scrollEventThrottle={16}
+            onScroll={handleListScroll}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -283,19 +416,19 @@ export default function PilgrimsScreen() {
               />
             }
           >
-            {isLoading && pilgrims.length === 0 ? (
+            {isPilgrimsLoading && pilgrims.length === 0 ? (
               <Text style={styles.loading}>در حال بارگذاری...</Text>
-            ) : pilgrims.length === 0 && !isFetching ? (
+            ) : pilgrims.length === 0 && !isPilgrimsFetching ? (
               <View style={styles.emptyWrap}>
                 <EmptyState
                   icon="people-outline"
                   title={
-                    hasFilters || debouncedQuery
+                    hasFilters || searchQuery
                       ? "زائری با این مشخصات یافت نشد"
                       : "زائری جهت نمایش وجود ندارد"
                   }
                 />
-                {!hasFilters && !debouncedQuery ? (
+                {!hasFilters && !searchQuery ? (
                   <PrimaryButton
                     label="زائر جدید"
                     icon="person-add-outline"
@@ -345,114 +478,45 @@ export default function PilgrimsScreen() {
                         : []),
                     ]}
                     footer={
-                      <View style={styles.itemActions}>
-                        <View style={styles.itemActionsRow}>
-                          <PrimaryButton
-                            label="تاریخچه رزروها"
-                            icon="time-outline"
-                            variant="secondary"
-                            style={styles.itemAction}
-                            labelStyle={styles.itemActionLabel}
-                            onPress={() =>
-                              router.push({
-                                pathname: "/(tabs)/reservations",
-                                params: {
-                                  reservationAction: "history",
-                                  pilgrimMobile: pilgrim.mobileNumber,
-                                  pilgrimName: pilgrim.fullName,
-                                  reservationRequestId: String(Date.now()),
-                                },
-                              })
-                            }
+                      <View style={styles.itemActionsBar}>
+                        <Pressable
+                          onPress={() => showPilgrimActions(pilgrim)}
+                          style={({ pressed }) => [
+                            styles.moreButton,
+                            pressed && styles.moreButtonPressed,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel="سایر عملیات"
+                        >
+                          <Ionicons
+                            name="ellipsis-horizontal"
+                            size={20}
+                            color={colors.textMuted}
                           />
-                          <PrimaryButton
-                            label="رزرو"
-                            icon="calendar-outline"
-                            variant="secondary"
-                            style={styles.itemAction}
-                            labelStyle={styles.itemActionLabel}
-                            onPress={() =>
-                              router.push({
-                                pathname: "/(tabs)/reservations",
-                                params: {
-                                  pilgrimId: String(pilgrim.id),
-                                  pilgrimName: pilgrim.fullName,
-                                  pilgrimMobile: pilgrim.mobileNumber,
-                                  pilgrimGender: pilgrim.gender ?? "",
-                                  reservationRequestId: String(Date.now()),
-                                },
-                              })
-                            }
-                          />
-                          <PrimaryButton
-                            label="ویرایش"
-                            icon="create-outline"
-                            variant="secondary"
-                            style={styles.itemAction}
-                            labelStyle={styles.itemActionLabel}
-                            onPress={() => openEditPilgrim(pilgrim)}
-                          />
-                        </View>
-                        <View style={styles.itemActionsRow}>
-                          {canDelete ? (
-                            <PrimaryButton
-                              label="حذف"
-                              icon="trash-outline"
-                              variant="dangerOutline"
-                              style={styles.itemAction}
-                              labelStyle={styles.itemActionLabel}
-                              loading={
-                                deletePilgrimMutation.isPending &&
-                                deletePilgrimMutation.variables === pilgrim.id
-                              }
-                              onPress={() => handleDeletePilgrim(pilgrim)}
-                            />
-                          ) : (
-                            <View style={styles.itemAction} />
-                          )}
-                          <PrimaryButton
-                            label="ورود و خروج"
-                            icon="log-in-outline"
-                            variant="secondary"
-                            style={styles.itemAction}
-                            labelStyle={styles.itemActionLabel}
-                            onPress={() =>
-                              router.push({
-                                pathname: "/(tabs)/attendance",
-                                params: {
-                                  attendanceQuery:
-                                    pilgrim.mobileNumber ||
-                                    pilgrim.nationalId ||
-                                    "",
-                                  attendanceRequestId: String(Date.now()),
-                                },
-                              })
-                            }
-                          />
-                          <PrimaryButton
-                            label="برنامه غذایی"
-                            icon="restaurant-outline"
-                            variant="secondary"
-                            style={styles.itemAction}
-                            labelStyle={styles.itemActionLabel}
-                            onPress={() =>
-                              router.push({
-                                pathname: "/(tabs)/meals",
-                                params: {
-                                  mealsView: "search",
-                                  mealsQuery: pilgrim.mobileNumber || "",
-                                  mealsRequestId: String(Date.now()),
-                                },
-                              })
-                            }
-                          />
-                        </View>
+                        </Pressable>
+                        <PrimaryButton
+                          label="ویرایش"
+                          icon="create-outline"
+                          variant="secondary"
+                          compact
+                          style={styles.itemActionPrimary}
+                          labelStyle={styles.itemActionLabel}
+                          onPress={() => openEditPilgrim(pilgrim)}
+                        />
                       </View>
                     }
                   />
                 </View>
               ))
             )}
+            {isFetchingNextPage ? (
+              <View style={styles.listFooterLoading}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={styles.listFooterLoadingText}>
+                  در حال بارگذاری...
+                </Text>
+              </View>
+            ) : null}
           </ScreenScroll>
         </>
       ) : (
@@ -484,7 +548,6 @@ export default function PilgrimsScreen() {
         onClose={() => setFilterModalVisible(false)}
         onApply={applyFilters}
       />
-      <NewReservationFab bottomOffset={showForm ? 72 : 0} />
     </ScreenContainer>
   );
 }
@@ -495,35 +558,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterButtonActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  filterButtonPressed: {
-    opacity: 0.88,
-  },
-  filterBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primary,
-  },
   listContent: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: 120,
+    paddingBottom: spacing.xxl,
     gap: spacing.md,
   },
   content: {
@@ -545,27 +582,52 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     alignItems: "stretch",
   },
-  itemActions: {
-    gap: spacing.sm,
-  },
-  itemActionsRow: {
+  itemActionsBar: {
     direction: "ltr",
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: spacing.sm,
   },
-  itemAction: {
-    flex: 1,
+  moreButton: {
+    width: 40,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moreButtonPressed: {
+    opacity: 0.85,
+    backgroundColor: colors.borderLight,
+  },
+  itemActionPrimary: {
+    minWidth: 96,
     minHeight: 36,
     borderRadius: 10,
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: spacing.sm,
   },
   itemActionLabel: {
-    fontSize: 10,
+    fontSize: 11,
   },
   loading: {
     textAlign: "center",
     writingDirection: "rtl",
     color: colors.textMuted,
     marginTop: spacing.xl,
+  },
+  listFooterLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
+  listFooterLoadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    writingDirection: "rtl",
   },
 });

@@ -306,10 +306,13 @@ export function CapacityDayCarousel({
     <View style={styles.section}>
       {onOpenCalendar ? (
         <Pressable
+          onPress={() => goToIndex(initialIndex)}
           style={({ pressed }) => [
             styles.calendarCta,
             pressed && styles.capacityCardPressed,
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="رفتن به ظرفیت امروز"
         >
           <View
             style={{

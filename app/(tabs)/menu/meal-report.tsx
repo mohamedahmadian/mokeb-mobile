@@ -6,7 +6,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AppHeader } from "@/src/components/AppHeader";
 import {
@@ -37,15 +37,41 @@ import {
   defaultMealReportRange,
   getMealReportDateBounds,
   getMealReportRange,
+  type MealReportMealFilter,
 } from "@/src/services/meals";
 import { listMawkibs } from "@/src/services/mawkibs";
-import type { Mawkib } from "@/src/types";
+import type { MealType, Mawkib } from "@/src/types";
+import { mealTypeLabel } from "@/src/lib/labels";
+
+const MEAL_REPORT_FILTERS: { value: MealReportMealFilter; label: string }[] = [
+  { value: "All", label: "همه" },
+  { value: "Breakfast", label: mealTypeLabel.Breakfast },
+  { value: "Lunch", label: mealTypeLabel.Lunch },
+  { value: "Dinner", label: mealTypeLabel.Dinner },
+];
+
+function mealReportFilterLabel(filter: MealReportMealFilter) {
+  return filter === "All" ? "همه وعده‌ها" : mealTypeLabel[filter];
+}
 
 export default function MealReportScreen() {
   const { ownerId } = useAuth();
+  const queryClient = useQueryClient();
   const router = useRouter();
-  const params = useLocalSearchParams<{ mawkibId?: string }>();
+  const params = useLocalSearchParams<{
+    mawkibId?: string;
+    returnTo?: "meals" | "dashboard";
+  }>();
   const paramMawkibId = params.mawkibId ? Number(params.mawkibId) : null;
+  const returnTo = params.returnTo === "dashboard" ? "dashboard" : "meals";
+
+  const exitMealReport = () => {
+    if (returnTo === "dashboard") {
+      router.navigate("/(tabs)/dashboard");
+      return;
+    }
+    router.navigate("/(tabs)/meals");
+  };
 
   const mawkibsQuery = useQuery({
     queryKey: ["mawkibs", ownerId],
@@ -105,11 +131,17 @@ export default function MealReportScreen() {
     formatPersianDate(defaults.endDate),
   );
   const [appliedRange, setAppliedRange] = useState(defaults);
+  const [selectedMealFilter, setSelectedMealFilter] =
+    useState<MealReportMealFilter>("All");
+  const [appliedMealFilter, setAppliedMealFilter] =
+    useState<MealReportMealFilter>("All");
+  const [reportApplied, setReportApplied] = useState(false);
 
   useEffect(() => {
     setStartPersian(formatPersianDate(defaults.startDate));
     setEndPersian(formatPersianDate(defaults.endDate));
     setAppliedRange(defaults);
+    setReportApplied(false);
   }, [defaults.startDate, defaults.endDate]);
 
   const reportQuery = useQuery({
@@ -119,18 +151,20 @@ export default function MealReportScreen() {
       selectedMawkibId,
       appliedRange.startDate,
       appliedRange.endDate,
+      appliedMealFilter,
     ],
-    enabled: !!ownerId && !!selectedMawkibId && !!dateBounds,
+    enabled: !!ownerId && !!selectedMawkibId && !!dateBounds && reportApplied,
     queryFn: () =>
       getMealReportRange(
         ownerId!,
         selectedMawkibId!,
         appliedRange.startDate,
         appliedRange.endDate,
+        appliedMealFilter,
       ),
   });
 
-  const applyRange = () => {
+  const applyRange = async () => {
     const startDate = parsePersianDate(startPersian);
     const endDate = parsePersianDate(endPersian);
     if (!startDate || !endDate) {
@@ -155,7 +189,53 @@ export default function MealReportScreen() {
       );
       return;
     }
-    setAppliedRange({ startDate, endDate });
+    if (!ownerId || !selectedMawkibId) return;
+
+    const range = { startDate, endDate };
+    setAppliedRange(range);
+    setAppliedMealFilter(selectedMealFilter);
+    setReportApplied(true);
+
+    // همان بازه دوباره انتخاب شود، کلید query عوض نمی‌شود؛ داده را از دیتابیس بخوان.
+    await queryClient.fetchQuery({
+      queryKey: [
+        "meal-report",
+        ownerId,
+        selectedMawkibId,
+        range.startDate,
+        range.endDate,
+        selectedMealFilter,
+      ],
+      queryFn: () =>
+        getMealReportRange(
+          ownerId,
+          selectedMawkibId,
+          range.startDate,
+          range.endDate,
+          selectedMealFilter,
+        ),
+    });
+  };
+
+  const openDeliveryForDay = (date: string) => {
+    if (!reportApplied || !selectedMawkibId) return;
+
+    const deliveryMealType: MealType =
+      appliedMealFilter === "All" ? "Lunch" : appliedMealFilter;
+
+    router.push({
+      pathname: "/(tabs)/meals",
+      params: {
+        mealsView: "delivery",
+        deliveryDate: date,
+        deliveryMealType,
+        deliveryMawkibId: String(selectedMawkibId),
+        mealsRequestId: String(Date.now()),
+        returnTo: "meal-report",
+        mealReportReturnTo: returnTo,
+        mealReportMawkibId: String(selectedMawkibId),
+      },
+    });
   };
 
   const days = reportQuery.data?.days ?? [];
@@ -169,7 +249,7 @@ export default function MealReportScreen() {
         <AppHeader
           title="گزارش وعده غذایی"
           subtitle="انتخاب موکب"
-          onBack={() => router.back()}
+          onBack={() => exitMealReport()}
           showLogo
         />
         <ScreenScroll contentContainerStyle={styles.content}>
@@ -207,7 +287,7 @@ export default function MealReportScreen() {
             setSelectedMawkibId(null);
             return;
           }
-          router.back();
+          exitMealReport();
         }}
         showLogo
       />
@@ -265,6 +345,35 @@ export default function MealReportScreen() {
                   yearTo={boundYears?.to}
                 />
               </View>
+
+              <View style={styles.mealFilterSection}>
+                <Text style={styles.mealFilterTitle}>وعده غذایی</Text>
+                <View style={styles.mealFilterRow}>
+                  {MEAL_REPORT_FILTERS.map((filter) => {
+                    const active = selectedMealFilter === filter.value;
+                    return (
+                      <Pressable
+                        key={filter.value}
+                        onPress={() => setSelectedMealFilter(filter.value)}
+                        style={[
+                          styles.mealFilterChip,
+                          active && styles.mealFilterChipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.mealFilterChipLabel,
+                            active && styles.mealFilterChipLabelActive,
+                          ]}
+                        >
+                          {filter.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
               <PrimaryButton
                 label="نمایش"
                 icon="pie-chart-outline"
@@ -275,6 +384,12 @@ export default function MealReportScreen() {
 
             {reportQuery.isFetching ? (
               <ActivityIndicator color={colors.primary} style={styles.loader} />
+            ) : !reportApplied ? (
+              <EmptyState
+                icon="pie-chart-outline"
+                title="بازه و وعده را انتخاب کنید"
+                description="پس از انتخاب تاریخ و وعده غذایی، روی «نمایش» بزنید."
+              />
             ) : days.length === 0 ? (
               <EmptyState
                 icon="restaurant-outline"
@@ -286,16 +401,19 @@ export default function MealReportScreen() {
                   <SummaryChip
                     label="کل"
                     value={formatPersianNumber(rangeTotal)}
+                    mealHint={mealReportFilterLabel(appliedMealFilter)}
                   />
                   <SummaryChip
                     label="تحویل"
                     value={formatPersianNumber(rangeServed)}
                     tone="success"
+                    mealHint={mealReportFilterLabel(appliedMealFilter)}
                   />
                   <SummaryChip
                     label="باقیمانده"
                     value={formatPersianNumber(rangeRemaining)}
                     tone={rangeRemaining > 0 ? "warning" : "success"}
+                    mealHint={mealReportFilterLabel(appliedMealFilter)}
                   />
                 </View>
 
@@ -303,7 +421,11 @@ export default function MealReportScreen() {
 
                 <View style={styles.dayGrid}>
                   {days.map((day) => (
-                    <DayMealReportCard key={day.date} day={day} />
+                    <DayMealReportCard
+                      key={day.date}
+                      day={day}
+                      onPress={() => openDeliveryForDay(day.date)}
+                    />
                   ))}
                 </View>
               </>
@@ -318,10 +440,12 @@ export default function MealReportScreen() {
 function SummaryChip({
   label,
   value,
+  mealHint,
   tone = "default",
 }: {
   label: string;
   value: string;
+  mealHint?: string;
   tone?: "default" | "success" | "warning";
 }) {
   const palette =
@@ -339,6 +463,9 @@ function SummaryChip({
       <Text style={[styles.summaryLabel, { color: palette.text }]}>
         {label}
       </Text>
+      {mealHint ? (
+        <Text style={styles.summaryMealHint}>{mealHint}</Text>
+      ) : null}
     </View>
   );
 }
@@ -394,6 +521,46 @@ const styles = StyleSheet.create({
   rangeInputs: {
     gap: spacing.sm,
   },
+  mealFilterSection: {
+    gap: spacing.xs,
+  },
+  mealFilterTitle: {
+    fontFamily: fontFamilies.medium,
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  mealFilterRow: {
+    flexDirection: "row-reverse",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  mealFilterChip: {
+    flex: 1,
+    minWidth: "22%",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    alignItems: "center",
+  },
+  mealFilterChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  mealFilterChipLabel: {
+    fontFamily: fontFamilies.regular,
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: "center",
+  },
+  mealFilterChipLabelActive: {
+    fontFamily: fontFamilies.medium,
+    color: colors.primaryDark,
+  },
   loader: {
     marginVertical: spacing.xl,
   },
@@ -417,6 +584,13 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontFamily: fontFamilies.regular,
     fontSize: 10,
+  },
+  summaryMealHint: {
+    fontFamily: fontFamilies.regular,
+    fontSize: 9,
+    color: colors.textSubtle,
+    textAlign: "center",
+    marginTop: 2,
   },
   dayGrid: {
     flexDirection: "row",

@@ -13,6 +13,7 @@ import { jalaaliMonthLength } from "jalaali-js";
 import { Text } from "@/src/lib/fonts";
 import { fontFamilies } from "@/src/lib/fonts";
 import { useAppBackHandler } from "@/src/hooks/useAppBackHandler";
+import { useBottomSheetPadding } from "@/src/hooks/useBottomSheetInsets";
 import {
   buildPersianDate,
   formatPersianDate,
@@ -131,6 +132,7 @@ export function PersianDateField({
   yearTo,
 }: PersianDateFieldProps) {
   const [open, setOpen] = useState(false);
+  const bottomPadding = useBottomSheetPadding();
   const initial = formatPersianDateParts(value) ?? todayParts();
   const [jy, setJy] = useState(initial.jy);
   const [jm, setJm] = useState(initial.jm);
@@ -226,11 +228,12 @@ export function PersianDateField({
         visible={open}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => setOpen(false)}
       >
         <View style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { paddingBottom: bottomPadding }]}>
             <Text style={styles.sheetTitle}>{label}</Text>
 
             <View style={styles.wheels}>
@@ -344,7 +347,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.xxl,
     gap: spacing.md,
   },
   sheetTitle: {

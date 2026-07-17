@@ -1,4 +1,4 @@
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { CapacityMeter } from "@/src/components/charts/CapacityMeter";
 import { Text } from "@/src/lib/fonts";
 import { fontFamilies } from "@/src/lib/fonts";
@@ -38,24 +38,16 @@ function dayCardPalette(day: MealReportDay) {
 
 type DayMealReportCardProps = {
   day: MealReportDay;
+  onPress?: () => void;
 };
 
-export function DayMealReportCard({ day }: DayMealReportCardProps) {
+export function DayMealReportCard({ day, onPress }: DayMealReportCardProps) {
   const palette = dayCardPalette(day);
   const isToday = day.date === todayDateStringInAppTz();
   const hasMeals = day.totalCount > 0;
 
-  return (
-    <View
-      style={[
-        styles.dayCard,
-        {
-          borderColor: palette.border,
-          backgroundColor: palette.bg,
-        },
-        isToday && styles.dayCardToday,
-      ]}
-    >
+  const content = (
+    <>
       <View style={styles.dayHeader}>
         <Text style={styles.weekday}>{persianWeekdayLabel(day.date)}</Text>
         <Text style={styles.dayNumber}>{persianDayNumber(day.date)}</Text>
@@ -85,6 +77,40 @@ export function DayMealReportCard({ day }: DayMealReportCardProps) {
           <Text style={styles.emptyMealsText}>بدون وعده</Text>
         </View>
       )}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.dayCard,
+          {
+            borderColor: palette.border,
+            backgroundColor: palette.bg,
+          },
+          isToday && styles.dayCardToday,
+          pressed && styles.dayCardPressed,
+        ]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.dayCard,
+        {
+          borderColor: palette.border,
+          backgroundColor: palette.bg,
+        },
+        isToday && styles.dayCardToday,
+      ]}
+    >
+      {content}
     </View>
   );
 }
@@ -122,6 +148,9 @@ const styles = StyleSheet.create({
   dayCardToday: {
     borderWidth: 2,
     borderColor: colors.primary,
+  },
+  dayCardPressed: {
+    opacity: 0.85,
   },
   dayHeader: {
     alignItems: "center",

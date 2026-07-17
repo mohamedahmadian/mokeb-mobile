@@ -3,12 +3,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
+import {
+  useBottomSheetPadding,
+  useKeyboardHeight,
+} from "@/src/hooks/useBottomSheetInsets";
 import { CarPlateInput } from "@/src/components/CarPlateInput";
 import { ListCard, PrimaryButton } from "@/src/components/ui";
 import { Text } from "@/src/lib/fonts";
@@ -24,6 +30,8 @@ import { colors, radius, spacing, typography } from "@/src/lib/theme";
 import { listPilgrims } from "@/src/services/pilgrims";
 import type { User } from "@/src/types";
 
+const HEADER_HEIGHT = 57;
+
 type CarPlateSearchModalProps = {
   visible: boolean;
   ownerId: number;
@@ -38,8 +46,17 @@ export function CarPlateSearchModal({
   onSelectPilgrim,
 }: CarPlateSearchModalProps) {
   const router = useRouter();
+  const { height: windowHeight } = useWindowDimensions();
+  const bottomPadding = useBottomSheetPadding();
+  const keyboardHeight = useKeyboardHeight();
   const [plate, setPlate] = useState<CarPlateValue>(() => emptyCarPlate());
   const [searchPlate, setSearchPlate] = useState<CarPlateValue | null>(null);
+
+  const keyboardOpen = keyboardHeight > 0;
+  const sheetMaxHeight = keyboardOpen
+    ? windowHeight - keyboardHeight - spacing.sm
+    : windowHeight * 0.92;
+  const scrollMaxHeight = Math.max(160, sheetMaxHeight - HEADER_HEIGHT);
 
   const { data: results = [], isFetching } = useQuery({
     queryKey: ["pilgrims-by-plate", ownerId, searchPlate],
@@ -57,6 +74,7 @@ export function CarPlateSearchModal({
       notify("پلاک خالی", "حداقل یک بخش از پلاک را وارد کنید.");
       return;
     }
+    Keyboard.dismiss();
     setSearchPlate({ ...plate });
   };
 
@@ -77,6 +95,7 @@ export function CarPlateSearchModal({
   };
 
   const handleClose = () => {
+    Keyboard.dismiss();
     setPlate(emptyCarPlate());
     setSearchPlate(null);
     onClose();
@@ -87,10 +106,21 @@ export function CarPlateSearchModal({
       visible={visible}
       animationType="slide"
       transparent
+      statusBarTranslucent
       onRequestClose={handleClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.modal}>
+        <Pressable style={styles.backdrop} onPress={handleClose} />
+        <View
+          style={[
+            styles.modal,
+            {
+              maxHeight: sheetMaxHeight,
+              paddingBottom: keyboardOpen ? spacing.md : bottomPadding,
+              marginBottom: keyboardOpen ? keyboardHeight : 0,
+            },
+          ]}
+        >
           <View style={styles.header}>
             <Pressable
               style={styles.closeButton}
@@ -104,9 +134,11 @@ export function CarPlateSearchModal({
           </View>
 
           <ScrollView
+            style={{ maxHeight: scrollMaxHeight }}
             contentContainerStyle={styles.content}
             keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator
+            nestedScrollEnabled
           >
             <Text style={styles.hint}>
               حداقل یک بخش از پلاک را وارد کنید تا زائرین مرتبط نمایش داده
@@ -159,15 +191,18 @@ export function CarPlateSearchModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.45)",
     justifyContent: "flex-end",
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   modal: {
-    maxHeight: "92%",
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     overflow: "hidden",
+    flexShrink: 1,
   },
   header: {
     flexDirection: "row-reverse",
@@ -193,7 +228,7 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
     gap: spacing.md,
-    paddingBottom: spacing.xxl,
+    flexGrow: 1,
   },
   hint: {
     ...typography.caption,
@@ -203,6 +238,7 @@ const styles = StyleSheet.create({
   resultsBlock: {
     gap: spacing.sm,
     marginTop: spacing.sm,
+    minHeight: 120,
   },
   resultsTitle: {
     ...typography.label,

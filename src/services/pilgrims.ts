@@ -227,6 +227,13 @@ export async function listPilgrims(
     return true;
   });
 
+  const offset = filters.offset ?? 0;
+  if (filters.limit !== undefined) {
+    result = result.slice(offset, offset + filters.limit);
+  } else if (offset > 0) {
+    result = result.slice(offset);
+  }
+
   return result;
 }
 

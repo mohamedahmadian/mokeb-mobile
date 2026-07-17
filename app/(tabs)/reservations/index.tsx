@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   RefreshControl,
@@ -12,7 +15,7 @@ import {
 } from "react-native";
 import { Text } from "@/src/lib/fonts";
 import {
-  keepPreviousData,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -36,11 +39,12 @@ import {
   SearchToolbar,
   SearchToolbarField,
   StickyBottomAction,
+  ToolbarIconButton,
 } from "@/src/components/ui";
-import { NewReservationFab } from "@/src/components/NewReservationFab";
 import { ReservationFiltersModal } from "@/src/components/ReservationFiltersModal";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { useDebouncedValue } from "@/src/hooks/useDebouncedValue";
+import type { AlertButton } from "@/src/contexts/NotifyContext";
+import { useNotifyContext } from "@/src/contexts/NotifyContext";
 import { usePullToRefresh } from "@/src/hooks/usePullToRefresh";
 import { useTabRefresh } from "@/src/hooks/useTabRefresh";
 import { useAppBackHandler } from "@/src/hooks/useAppBackHandler";
@@ -79,6 +83,7 @@ import {
   countReservations,
   createReservation,
   deleteReservation,
+  extendReservation,
   getPilgrimCardDetails,
   listReservations,
   updateReservation,
@@ -87,6 +92,17 @@ import {
 const todayIso = new Date().toISOString().slice(0, 10);
 const todayPersian = formatPersianDate(todayIso);
 const tomorrowPersian = addDaysToPersianDate(todayPersian, 1) ?? todayPersian;
+const RESERVATIONS_PAGE_SIZE = 20;
+
+function getReservationsNextPageParam(
+  lastPage: Reservation[] | undefined,
+  allPages: Reservation[][] | undefined,
+) {
+  if (!Array.isArray(lastPage) || lastPage.length < RESERVATIONS_PAGE_SIZE) {
+    return undefined;
+  }
+  return (allPages?.length ?? 0) * RESERVATIONS_PAGE_SIZE;
+}
 
 type PilgrimExtraInfo = {
   gender: UserGender | "";
@@ -235,8 +251,21 @@ function getStayDuration(startDate: string, endDate: string) {
   return difference >= 1 && difference <= 4 ? difference : 0;
 }
 
+function getExtensionDaysFromCurrentEnd(currentEnd: string, newEnd: string) {
+  const baseIso = parsePersianDate(currentEnd);
+  const targetIso = parsePersianDate(newEnd);
+  if (!baseIso || !targetIso) return 0;
+
+  const difference =
+    (Date.parse(`${targetIso}T00:00:00.000Z`) -
+      Date.parse(`${baseIso}T00:00:00.000Z`)) /
+    86_400_000;
+  return difference >= 1 && difference <= 3 ? difference : 0;
+}
+
 export default function ReservationsScreen() {
   const { user, ownerId, canDelete, canCancel } = useAuth();
+  const { showActions } = useNotifyContext();
   const router = useRouter();
   const queryClient = useQueryClient();
   const reservationParams = useLocalSearchParams<{
@@ -251,7 +280,7 @@ export default function ReservationsScreen() {
   const handledReservationRequest = useRef<string | null>(null);
   const hasAppliedGenderDefault = useRef(false);
   const [query, setQuery] = useState("");
-  const debouncedQuery = useDebouncedValue(query.trim());
+  const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [draftFilters, setDraftFilters] = useState(
     createEmptyReservationFilterForm,
@@ -299,6 +328,7 @@ export default function ReservationsScreen() {
   const [extendingReservation, setExtendingReservation] =
     useState<Reservation | null>(null);
   const [extendStartDate, setExtendStartDate] = useState(todayPersian);
+  const [extendCurrentEndDate, setExtendCurrentEndDate] = useState(todayPersian);
   const [extendEndDate, setExtendEndDate] = useState(tomorrowPersian);
   const [extendDurationDays, setExtendDurationDays] = useState(1);
   const [finalCheckoutReservation, setFinalCheckoutReservation] =
@@ -445,6 +475,14 @@ export default function ReservationsScreen() {
       return;
     }
 
+    if (reservationParams.reservationAction === "search") {
+      handledReservationRequest.current = requestId;
+      setShowForm(false);
+      resetForm();
+      setQuery("");
+      return;
+    }
+
     const pilgrimId = Number(reservationParams.pilgrimId);
     const mawkibId = Number(reservationParams.mawkibId);
     const hasPilgrim = Number.isFinite(pilgrimId) && pilgrimId > 0;
@@ -506,20 +544,54 @@ export default function ReservationsScreen() {
   };
 
   const {
-    data: reservations = [],
-    isLoading,
-    isFetching,
+    data: reservationsPages,
+    isLoading: isReservationsLoading,
+    isFetching: isReservationsFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
     refetch: refetchReservations,
-  } = useQuery({
-    queryKey: ["reservations", ownerId, debouncedQuery, listFilters],
-    enabled: !!ownerId,
-    placeholderData: keepPreviousData,
-    queryFn: () =>
-      listReservations(ownerId!, {
-        query: debouncedQuery || undefined,
+  } = useInfiniteQuery({
+    queryKey: ["reservations", "infinite", ownerId, searchQuery, listFilters],
+    enabled: !!ownerId && !showForm,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
+      if (!ownerId) return Promise.resolve([]);
+      return listReservations(ownerId, {
+        query: searchQuery || undefined,
         ...listFilters,
-      }),
+        limit: RESERVATIONS_PAGE_SIZE,
+        offset: pageParam,
+      });
+    },
+    getNextPageParam: getReservationsNextPageParam,
   });
+
+  const reservations = useMemo(
+    () => reservationsPages?.pages.flatMap((page) => page ?? []) ?? [],
+    [reservationsPages],
+  );
+
+  const loadingMoreRef = useRef(false);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!hasNextPage || isFetchingNextPage || loadingMoreRef.current) return;
+
+      const { layoutMeasurement, contentOffset, contentSize } =
+        event.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (layoutMeasurement.height + contentOffset.y);
+
+      if (distanceFromBottom < 160) {
+        loadingMoreRef.current = true;
+        void fetchNextPage().finally(() => {
+          loadingMoreRef.current = false;
+        });
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
 
   const { data: totalReservations = 0, refetch: refetchReservationCount } =
     useQuery({
@@ -717,50 +789,42 @@ export default function ReservationsScreen() {
   const extendMutation = useMutation({
     mutationFn: async () => {
       if (!extendingReservation) throw new Error("رزرو انتخاب نشده است");
-      if (!ownerId || !user) throw new Error("نشست کاربر معتبر نیست");
+      if (!ownerId) throw new Error("نشست کاربر معتبر نیست");
 
-      const reservationDate = parsePersianDate(extendStartDate);
       const reservationEndDate = parsePersianDate(extendEndDate);
-      if (!reservationDate || !reservationEndDate) {
-        throw new Error("تاریخ‌ها را با قالب شمسی ۱۴۰۵/۰۴/۲۰ وارد کنید");
-      }
-      if (reservationEndDate < reservationDate) {
-        throw new Error("تاریخ پایان نمی‌تواند قبل از تاریخ شروع باشد");
+      if (!reservationEndDate) {
+        throw new Error("تاریخ پایان را با قالب شمسی ۱۴۰۵/۰۴/۲۰ وارد کنید");
       }
 
-      return createReservation(ownerId, {
-        mawkibId: extendingReservation.mawkibId,
-        pilgrimUserId: extendingReservation.pilgrimUserId,
-        reservationDate,
+      return extendReservation(
+        ownerId,
+        extendingReservation.id,
         reservationEndDate,
-        maleGuestCount: extendingReservation.maleGuestCount,
-        femaleGuestCount: extendingReservation.femaleGuestCount,
-        pilgrimMobile: extendingReservation.pilgrimMobile,
-        companions: extendingReservation.companions ?? undefined,
-        description: extendingReservation.description ?? undefined,
-        travelOrigin: extendingReservation.travelOrigin ?? undefined,
-        status: "Confirmed",
-        reservedByUserId: user.id,
-      });
+      );
     },
-    onSuccess: (created) => {
+    onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["reservations"] });
       queryClient.invalidateQueries({ queryKey: ["reservations-count"] });
       queryClient.invalidateQueries({ queryKey: ["mawkib-capacity-day"] });
       queryClient.invalidateQueries({ queryKey: ["mawkib-inventory"] });
       queryClient.invalidateQueries({ queryKey: ["meal-plans"] });
       setExtendingReservation(null);
-      notify("موفق", `رزرو تمدیدی با کد ${created.trackingCode} ثبت شد`);
+      notify(
+        "موفق",
+        `تاریخ پایان رزرو ${updated.trackingCode} به ${formatPersianDate(updated.reservationEndDate)} به‌روزرسانی شد`,
+      );
     },
     onError: (error: Error) => notify("خطا", error.message),
   });
 
   const openExtendModal = (reservation: Reservation) => {
-    const start = formatPersianDate(reservation.reservationEndDate);
-    const end = addDaysToPersianDate(start, 1) ?? start;
+    const start = formatPersianDate(reservation.reservationDate);
+    const currentEnd = formatPersianDate(reservation.reservationEndDate);
+    const nextEnd = addDaysToPersianDate(currentEnd, 1) ?? currentEnd;
     setExtendingReservation(reservation);
     setExtendStartDate(start);
-    setExtendEndDate(end);
+    setExtendCurrentEndDate(currentEnd);
+    setExtendEndDate(nextEnd);
     setExtendDurationDays(1);
   };
 
@@ -808,13 +872,7 @@ export default function ReservationsScreen() {
 
   const applyExtendDuration = (days: number) => {
     setExtendDurationDays(days);
-    const nextEnd = addDaysToPersianDate(extendStartDate, days);
-    if (nextEnd) setExtendEndDate(nextEnd);
-  };
-
-  const handleExtendStartDateChange = (value: string) => {
-    setExtendStartDate(value);
-    const nextEnd = addDaysToPersianDate(value, extendDurationDays);
+    const nextEnd = addDaysToPersianDate(extendCurrentEndDate, days);
     if (nextEnd) setExtendEndDate(nextEnd);
   };
 
@@ -902,6 +960,79 @@ export default function ReservationsScreen() {
     setFilterModalVisible(false);
   };
 
+  const submitSearch = () => setSearchQuery(query.trim());
+
+  const showReservationActions = (reservation: Reservation) => {
+    const buttons: AlertButton[] = [
+      {
+        text: "زائر کارت",
+        onPress: () => openPilgrimCard(reservation.id),
+      },
+      {
+        text: "امانت",
+        onPress: () =>
+          router.push({
+            pathname: "/reservations/delivered-items",
+            params: {
+              reservationId: String(reservation.id),
+              pilgrimName: reservation.pilgrimName ?? "",
+              trackingCode: reservation.trackingCode,
+            },
+          }),
+      },
+      {
+        text: "برنامه غذایی",
+        onPress: () =>
+          router.push({
+            pathname: "/reservations/meal-plan",
+            params: {
+              reservationId: String(reservation.id),
+              pilgrimName: reservation.pilgrimName ?? "",
+              trackingCode: reservation.trackingCode,
+            },
+          }),
+      },
+      {
+        text: "پیامک",
+        onPress: () => handleSendSms(reservation),
+      },
+      {
+        text: "تمدید",
+        onPress: () => openExtendModal(reservation),
+      },
+    ];
+
+    if (getAttendanceActionVisibility(reservation).canFinalCheckout) {
+      buttons.push({
+        text: "خروج نهایی",
+        style: "destructive",
+        onPress: () => handleFinalCheckout(reservation),
+      });
+    }
+
+    buttons.push({
+      text: "لغو",
+      style: "destructive",
+      onPress: () => handleCancelReservation(reservation),
+    });
+
+    if (canDelete) {
+      buttons.push({
+        text: "حذف",
+        style: "destructive",
+        onPress: () => handleDeleteReservation(reservation),
+      });
+    }
+
+    buttons.push({ text: "انصراف", style: "cancel" });
+
+    showActions({
+      title: reservation.pilgrimName ?? "زائر",
+      message: reservation.trackingCode,
+      buttons,
+    });
+  };
+
   return (
     <ScreenContainer>
       <AppHeader
@@ -915,6 +1046,17 @@ export default function ReservationsScreen() {
         subtitle={showForm ? undefined : "مدیریت و جستجوی رزروها"}
         onBack={showForm ? handleFormBack : undefined}
         showLogo={!showForm}
+        leftAction={
+          !showForm ? (
+            <ToolbarIconButton
+              icon="options-outline"
+              onPress={openFilterModal}
+              accessibilityLabel="فیلتر رزروها"
+              active={hasFilters}
+              showBadge={hasFilters}
+            />
+          ) : undefined
+        }
       />
 
       {showForm ? (
@@ -1271,23 +1413,6 @@ export default function ReservationsScreen() {
         <>
           <View style={styles.listToolbar}>
             <SearchToolbar>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.filterButton,
-                  hasFilters && styles.filterButtonActive,
-                  pressed && styles.filterButtonPressed,
-                ]}
-                onPress={openFilterModal}
-                accessibilityRole="button"
-                accessibilityLabel="فیلتر رزروها"
-              >
-                <Ionicons
-                  name="options-outline"
-                  size={22}
-                  color={hasFilters ? colors.primaryDark : colors.textMuted}
-                />
-                {hasFilters ? <View style={styles.filterBadge} /> : null}
-              </Pressable>
               <SearchToolbarField>
                 <SearchBar
                   value={query}
@@ -1295,13 +1420,21 @@ export default function ReservationsScreen() {
                   placeholder="کد رزرو، نام زائر یا موبایل"
                   autoFocus
                   embedded
+                  onSearchPress={submitSearch}
                 />
               </SearchToolbarField>
+              <ToolbarIconButton
+                icon="add"
+                onPress={openNewReservation}
+                accessibilityLabel="رزرو جدید"
+              />
             </SearchToolbar>
           </View>
           <ScreenScroll
             contentContainerStyle={styles.listContent}
             keyboardDismissMode="on-drag"
+            scrollEventThrottle={16}
+            onScroll={handleListScroll}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -1312,19 +1445,19 @@ export default function ReservationsScreen() {
               />
             }
           >
-            {isLoading && reservations.length === 0 ? (
+            {isReservationsLoading && reservations.length === 0 ? (
               <Text style={styles.loading}>در حال بارگذاری...</Text>
-            ) : reservations.length === 0 && !isFetching ? (
+            ) : reservations.length === 0 && !isReservationsFetching ? (
               <View style={styles.emptyWrap}>
                 <EmptyState
                   icon="calendar-outline"
                   title={
-                    hasFilters || debouncedQuery
+                    hasFilters || searchQuery
                       ? "رزروی با این مشخصات یافت نشد"
                       : "رزروی جهت نمایش وجود ندارد"
                   }
                 />
-                {!hasFilters && !debouncedQuery ? (
+                {!hasFilters && !searchQuery ? (
                   <PrimaryButton
                     label="رزرو جدید"
                     icon="calendar-outline"
@@ -1340,6 +1473,10 @@ export default function ReservationsScreen() {
                     title={reservation.pilgrimName ?? "زائر"}
                     titleIcon="person-outline"
                     badgeCaption={formatPersianDateTime(reservation.createdAt)}
+                    guestCounts={{
+                      male: reservation.maleGuestCount,
+                      female: reservation.femaleGuestCount,
+                    }}
                     badge={reservationStatusLabel[reservation.status]}
                     badgeColor={
                       reservation.status === "Confirmed"
@@ -1381,138 +1518,62 @@ export default function ReservationsScreen() {
                       },
                     ]}
                     footer={
-                      <View style={styles.itemActions}>
-                        <PrimaryButton
-                          label="ویرایش"
-                          icon="create-outline"
-                          variant="secondary"
-                          compact
-                          style={styles.itemAction}
-                          labelStyle={styles.itemActionLabel}
-                          onPress={() => openReservation(reservation)}
-                        />
-                        {reservation.status === "Confirmed" ||
-                        reservation.status === "Completed" ? (
+                      <View style={styles.itemActionsBar}>
+                        <Pressable
+                          onPress={() => showReservationActions(reservation)}
+                          style={({ pressed }) => [
+                            styles.moreButton,
+                            pressed && styles.moreButtonPressed,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel="سایر عملیات"
+                        >
+                          <Ionicons
+                            name="ellipsis-horizontal"
+                            size={20}
+                            color={colors.textMuted}
+                          />
+                        </Pressable>
+                        <View style={styles.itemActionsPrimary}>
+                          {reservation.status === "Confirmed" ||
+                          reservation.status === "Completed" ? (
+                            <PrimaryButton
+                              label="ورود و خروج"
+                              icon="log-in-outline"
+                              variant="secondary"
+                              compact
+                              style={styles.itemActionPrimary}
+                              labelStyle={styles.itemActionLabel}
+                              onPress={() => openAttendance(reservation)}
+                            />
+                          ) : null}
                           <PrimaryButton
-                            label="ورود و خروج"
-                            icon="log-in-outline"
+                            label="ویرایش"
+                            icon="create-outline"
                             variant="secondary"
                             compact
-                            style={styles.itemAction}
+                            style={styles.itemActionPrimary}
                             labelStyle={styles.itemActionLabel}
-                            onPress={() => openAttendance(reservation)}
+                            onPress={() => openReservation(reservation)}
                           />
-                        ) : null}
-                        {getAttendanceActionVisibility(reservation)
-                          .canFinalCheckout ? (
-                          <PrimaryButton
-                            label="خروج نهایی"
-                            icon="exit-outline"
-                            variant="danger"
-                            compact
-                            loading={checkoutLoadingId === reservation.id}
-                            style={styles.itemAction}
-                            labelStyle={styles.itemActionLabel}
-                            onPress={() => handleFinalCheckout(reservation)}
-                          />
-                        ) : null}
-                        <PrimaryButton
-                          label="زائر کارت"
-                          icon="card-outline"
-                          variant="secondary"
-                          compact
-                          style={styles.itemAction}
-                          labelStyle={styles.itemActionLabel}
-                          onPress={() => openPilgrimCard(reservation.id)}
-                        />
-                        <PrimaryButton
-                          label="امانت"
-                          icon="briefcase-outline"
-                          variant="secondary"
-                          compact
-                          style={styles.itemAction}
-                          labelStyle={styles.itemActionLabel}
-                          onPress={() =>
-                            router.push({
-                              pathname: "/reservations/delivered-items",
-                              params: {
-                                reservationId: String(reservation.id),
-                                pilgrimName: reservation.pilgrimName ?? "",
-                                trackingCode: reservation.trackingCode,
-                              },
-                            })
-                          }
-                        />
-                        <PrimaryButton
-                          label="برنامه غذایی"
-                          icon="restaurant-outline"
-                          variant="secondary"
-                          compact
-                          style={styles.itemAction}
-                          labelStyle={styles.itemActionLabel}
-                          onPress={() =>
-                            router.push({
-                              pathname: "/reservations/meal-plan",
-                              params: {
-                                reservationId: String(reservation.id),
-                                pilgrimName: reservation.pilgrimName ?? "",
-                                trackingCode: reservation.trackingCode,
-                              },
-                            })
-                          }
-                        />
-                        <PrimaryButton
-                          label="پیامک"
-                          icon="chatbubble-outline"
-                          variant="secondary"
-                          compact
-                          loading={smsLoadingId === reservation.id}
-                          style={styles.itemAction}
-                          labelStyle={styles.itemActionLabel}
-                          onPress={() => handleSendSms(reservation)}
-                        />
-                        <PrimaryButton
-                          label="تمدید"
-                          icon="calendar-outline"
-                          variant="secondary"
-                          compact
-                          style={styles.itemAction}
-                          labelStyle={styles.itemActionLabel}
-                          onPress={() => openExtendModal(reservation)}
-                        />
-                        <PrimaryButton
-                          label="لغو"
-                          icon="close-circle-outline"
-                          variant="dangerOutline"
-                          compact
-                          disabled={reservation.status === "Cancelled"}
-                          loading={cancelMutation.isPending}
-                          style={styles.itemAction}
-                          labelStyle={styles.itemActionLabel}
-                          onPress={() => handleCancelReservation(reservation)}
-                        />
-                        {canDelete ? (
-                          <PrimaryButton
-                            label="حذف"
-                            icon="trash-outline"
-                            variant="dangerOutline"
-                            compact
-                            loading={deleteMutation.isPending}
-                            style={styles.itemAction}
-                            labelStyle={styles.itemActionLabel}
-                            onPress={() => handleDeleteReservation(reservation)}
-                          />
-                        ) : null}
+                        </View>
                       </View>
                     }
                   />
                 </View>
               ))
             )}
+            {isFetchingNextPage ? (
+              <View style={styles.listFooterLoading}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={styles.listFooterLoadingText}>
+                  در حال بارگذاری...
+                </Text>
+              </View>
+            ) : null}
           </ScreenScroll>
         </>
       )}
-      {!showForm ? <NewReservationFab /> : null}
       <ReservationFiltersModal
         visible={filterModalVisible}
         value={draftFilters}
@@ -1554,12 +1615,24 @@ export default function ReservationsScreen() {
             <Text style={styles.extendTitle}>تمدید رزرو</Text>
             {extendingReservation ? (
               <Text style={styles.extendSubtitle}>
-                رزرو جدید با مشخصات «
+                تاریخ پایان رزرو «
                 {extendingReservation.pilgrimName ?? "زائر"} •{" "}
-                {extendingReservation.trackingCode}» برای بازه انتخابی ساخته
-                می‌شود
+                {extendingReservation.trackingCode}» تغییر می‌کند و ظرفیت
+                موکب به‌روزرسانی می‌شود
               </Text>
             ) : null}
+
+            <View style={styles.extendReadOnlyField}>
+              <Text style={styles.extendReadOnlyLabel}>تاریخ شروع</Text>
+              <Text style={styles.extendReadOnlyValue}>{extendStartDate}</Text>
+            </View>
+
+            <View style={styles.extendReadOnlyField}>
+              <Text style={styles.extendReadOnlyLabel}>تاریخ پایان فعلی</Text>
+              <Text style={styles.extendReadOnlyValue}>
+                {extendCurrentEndDate}
+              </Text>
+            </View>
 
             <View style={styles.durationOptions}>
               {[1, 2, 3].map((days) => (
@@ -1573,17 +1646,13 @@ export default function ReservationsScreen() {
             </View>
 
             <PersianDateField
-              label="تاریخ شروع"
-              value={extendStartDate}
-              onChange={handleExtendStartDateChange}
-              placeholder="انتخاب تاریخ شروع"
-            />
-            <PersianDateField
-              label="تاریخ پایان"
+              label="تاریخ پایان جدید"
               value={extendEndDate}
               onChange={(value) => {
                 setExtendEndDate(value);
-                setExtendDurationDays(getStayDuration(extendStartDate, value));
+                setExtendDurationDays(
+                  getExtensionDaysFromCurrentEnd(extendCurrentEndDate, value),
+                );
               }}
               placeholder="انتخاب تاریخ پایان"
             />
@@ -1618,32 +1687,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterButtonActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  filterButtonPressed: {
-    opacity: 0.88,
-  },
-  filterBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primary,
-  },
   listContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -1661,14 +1704,36 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     alignItems: "stretch",
   },
-  itemActions: {
+  itemActionsBar: {
     direction: "ltr",
     flexDirection: "row",
-    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: spacing.sm,
   },
-  itemAction: {
-    width: "48%",
+  itemActionsPrimary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+    flex: 1,
+    flexShrink: 1,
+  },
+  moreButton: {
+    width: 40,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moreButtonPressed: {
+    opacity: 0.85,
+    backgroundColor: colors.borderLight,
+  },
+  itemActionPrimary: {
     minHeight: 36,
     borderRadius: 10,
     paddingHorizontal: spacing.sm,
@@ -1704,6 +1769,27 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
     marginBottom: spacing.xs,
     fontSize: 13,
+  },
+  extendReadOnlyField: {
+    gap: spacing.xs,
+  },
+  extendReadOnlyLabel: {
+    ...formTypography.label,
+    color: colors.text,
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  extendReadOnlyValue: {
+    ...formTypography.body,
+    color: colors.textMuted,
+    textAlign: "right",
+    writingDirection: "rtl",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.borderLight,
   },
   extendActions: {
     direction: "ltr",
@@ -1997,5 +2083,17 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
     color: colors.textMuted,
     marginTop: spacing.xl,
+  },
+  listFooterLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
+  listFooterLoadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    writingDirection: "rtl",
   },
 });

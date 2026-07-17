@@ -77,10 +77,10 @@ export function splitPlateSerial(serial: string): {
     };
   }
 
-  const firstChar = [...trimmed][0] ?? "";
+  // No recognized plate letter prefix — keep everything in the digits segment.
   return {
-    letter: firstChar,
-    digits: normalizeDigits(trimmed.slice(firstChar.length), 3),
+    letter: "",
+    digits: normalizeDigits(trimmed, 3),
   };
 }
 

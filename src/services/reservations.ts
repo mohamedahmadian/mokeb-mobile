@@ -217,6 +217,13 @@ export async function listReservations(
     result = result.filter((row) => (row.description ?? "").includes(needle));
   }
 
+  const offset = filters.offset ?? 0;
+  if (filters.limit !== undefined) {
+    result = result.slice(offset, offset + filters.limit);
+  } else if (offset > 0) {
+    result = result.slice(offset);
+  }
+
   return result;
 }
 
@@ -573,7 +580,53 @@ export async function updateReservation(
     await rebuildMawkibInventory(mawkibId);
   }
 
+  const datesChanged =
+    (input.reservationDate !== undefined &&
+      input.reservationDate !== previous.reservationDate) ||
+    (input.reservationEndDate !== undefined &&
+      input.reservationEndDate !== previous.reservationEndDate);
+
+  if (datesChanged) {
+    const mawkib = await db.getFirstAsync<{ mealPlanManagementEnabled: number }>(
+      "SELECT mealPlanManagementEnabled FROM mawkibs WHERE id = ?",
+      [reservation.mawkibId],
+    );
+    if (mawkib && boolFromDb(mawkib.mealPlanManagementEnabled)) {
+      await regenerateMealPlans(ownerUserId, id);
+    }
+  }
+
   return reservation;
+}
+
+export async function extendReservation(
+  ownerUserId: number,
+  id: number,
+  reservationEndDate: string,
+): Promise<Reservation> {
+  const previous = await getReservationById(ownerUserId, id);
+  if (!previous) throw new Error("رزرو یافت نشد");
+
+  if (
+    previous.status !== "Confirmed" &&
+    previous.status !== "Completed"
+  ) {
+    throw new Error("فقط رزروهای تأیید شده یا تکمیل‌شده قابل تمدید هستند");
+  }
+
+  if (reservationEndDate < previous.reservationDate) {
+    throw new Error("تاریخ پایان نمی‌تواند قبل از تاریخ شروع باشد");
+  }
+
+  if (reservationEndDate === previous.reservationEndDate) {
+    throw new Error("تاریخ پایان جدید با تاریخ فعلی یکسان است");
+  }
+
+  if (reservationEndDate < previous.reservationEndDate) {
+    throw new Error("تاریخ پایان جدید نمی‌تواند قبل از تاریخ پایان فعلی باشد");
+  }
+
+  return updateReservation(ownerUserId, id, { reservationEndDate });
 }
 
 export async function deleteReservation(

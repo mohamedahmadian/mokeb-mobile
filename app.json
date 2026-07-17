@@ -24,6 +24,7 @@
       }
     },
     "android": {
+      "versionCode": 2,
       "package": "com.mokeb.mobile",
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
@@ -40,7 +41,15 @@
       "blockedPermissions": [
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
-      ]
+      ],
+      "signing": {
+        "release": {
+          "keystore": "./mohamedahmadian__mokeb-mobile.jks",
+          "keystorePassword": "a6aedc37852910873d04653e1bd8ba88",
+          "keyAlias": "73425c3d6cb188de0f1f74aa2f1805e3",
+          "keyPassword": "fd48a724c96b913c8708ae69703aa81a"
+        }
+      }
     },
     "web": {
       "bundler": "metro",
